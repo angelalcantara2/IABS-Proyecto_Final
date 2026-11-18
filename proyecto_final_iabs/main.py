@@ -1,6 +1,6 @@
 from lector import lectura_datos, obtener_paciente, ruta_archivo
-from grafo import construir_grafo, dibujar_grafo
-from busqueda import bfs
+from grafo import construir_grafo, dibujar_grafo, calcular_costo_arista
+from busqueda import bfs, ucs
 
 pacientes, matriz = lectura_datos(ruta_archivo)
 
@@ -38,20 +38,30 @@ def consultar_paciente():
         print("\nPaciente encontrado.")
         print("Información:", p)
 
-        costos = matriz["Costo_Financiero_Base"]
+        costos = [calcular_costo_arista(fila, p) for _, fila in matriz.iterrows()]
         G = construir_grafo(matriz, costos)
+
+        print("\nNúmero de nodos:", G.number_of_nodes())
+        print("Número de conexiones:", G.number_of_edges())
 
         print("\n¿Qué búsqueda quiere usar?")
         print("1. BFS (Nivel 1)")
+        print("2. UCS (Nivel 2)")
 
         alg = input("Opción: ").strip()
 
         if alg == "1":
-            mostrar_resultado("BFS", bfs(G))
+            ruta, costo, nodos = bfs(G)
+            mostrar_resultado("BFS", (ruta, costo, nodos))
+            dibujar_grafo(G, f"Paciente {paciente_id} - BFS")
+
+        elif alg == "2":
+            ruta, costo, nodos = ucs(G)
+            mostrar_resultado("UCS", (ruta, costo, nodos))
+            dibujar_grafo(G, f"Paciente {paciente_id} - UCS")
+
         else:
             print("La opción no es correcta.")
-
-        dibujar_grafo(G, f"Paciente {paciente_id}")
 
     else:
         print("\nEl paciente no existe en la base de datos.")
@@ -65,7 +75,7 @@ def mostrar_resultado(nombre, resultado):
     print(f"\n=== {nombre} ===")
     if ruta:
         print("Ruta:", " → ".join(ruta))
-        print("Costo:", costo)
+        print("Costo:", round(costo, 2))
         print("Nodos expandidos:", nodos)
     else:
         print("No se encontró ruta.")
