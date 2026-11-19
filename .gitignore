@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Editores / sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Archivos temporales de Office (aparecen si el Excel está abierto)
+~$*
+
+# Imágenes y reportes generados al correr el programa
+resultados/
+*.log
