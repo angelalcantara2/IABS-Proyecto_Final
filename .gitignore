@@ -1,23 +1,23 @@
 # Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
+*.pyc
 
 # Entornos virtuales
 .venv/
 venv/
-env/
 
-# Editores / sistema operativo
+# Editores y sistema
 .vscode/
 .idea/
-.DS_Store
 Thumbs.db
+.DS_Store
 
-# Archivos temporales de Office (aparecen si el Excel está abierto)
+# Temporales de Office (aparecen con el Excel o el Word abiertos)
 ~$*
 
-# Imágenes y reportes generados al correr el programa
+# Salidas del programa
 resultados/
-*.log
+reporte_comparativo.csv
+
+# Carpeta antigua (todo está ahora en src/, datos/ y archivo/)
+proyecto_final_iabs/
