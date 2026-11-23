@@ -8,6 +8,7 @@ Para el PDF usa Microsoft Word (paquete docx2pdf) y, si no está, LibreOffice.
     pip install docx2pdf
 """
 import os
+import sys
 import glob
 import shutil
 import subprocess
@@ -760,3 +761,8 @@ try:
     print(f"PDF guardado ({motor}):", salida_pdf)
 except Exception as e:  # sin Word ni LibreOffice: el Word queda listo igual
     print("AVISO: el Word se generó, pero no se pudo crear el PDF.", e)
+
+# Salida limpia: evita que el cierre de Word (COM) deje un código de error al terminar
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)

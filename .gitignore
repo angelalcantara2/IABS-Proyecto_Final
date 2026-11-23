@@ -25,3 +25,6 @@ proyecto_final_iabs/
 # Informe generado por armar_informe.py (se crea de nuevo cada vez que se corre)
 docs/SSDC_Entregables_2_y_3.docx
 docs/SSDC_Entregables_2_y_3.pdf
+
+# Carpeta que crea la app de Claude al guardar archivos (no va al repositorio)
+Claude outputs/

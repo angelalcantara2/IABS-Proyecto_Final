@@ -375,13 +375,14 @@ class AppSSDC(tk.Tk):
 
     # ---- Exportar informe: corre armar_informe.py sin congelar la ventana ----
     def exportar_informe(self):
+        self.inicio_informe = time.time()
         self.btn_informe.configure(text="⏳  Generando informe...", state="disabled")
         self.config(cursor="watch")
         threading.Thread(target=self._generar_informe, daemon=True).start()
 
     def _generar_informe(self):
         try:
-            entorno = dict(os.environ, PYTHONIOENCODING="utf-8", MPLBACKEND="Agg")
+            entorno = dict(os.environ, PYTHONIOENCODING="utf-8", MPLBACKEND="Agg", TQDM_DISABLE="1")
             res = subprocess.run([sys.executable, SCRIPT_INFORME], cwd=DIR_SRC, env=entorno,
                                  capture_output=True, text=True, encoding="utf-8", errors="replace")
             ok, salida = res.returncode == 0, (res.stdout + res.stderr).strip()
@@ -392,11 +393,14 @@ class AppSSDC(tk.Tk):
     def _fin_informe(self, ok, salida):
         self.btn_informe.configure(text="📄  Exportar informe APA (Word y PDF)", state="normal")
         self.config(cursor="")
-        if not ok or not os.path.exists(WORD_INFORME):
+        # Se juzga por el archivo, no por el código de salida: al cerrar Word (docx2pdf) el proceso
+        # a veces termina con un código distinto de 0 aunque el informe se haya generado bien.
+        nuevo = lambda ruta: os.path.exists(ruta) and os.path.getmtime(ruta) >= self.inicio_informe - 1
+        if not nuevo(WORD_INFORME):
             ultimas = "\n".join(salida.splitlines()[-8:])
             messagebox.showerror("Informe", f"No se pudo generar el informe.\n\n{ultimas}", parent=self)
             return
-        pdf = PDF_INFORME if os.path.exists(PDF_INFORME) else ("(no se pudo crear el PDF: hace falta Word con "
+        pdf = PDF_INFORME if nuevo(PDF_INFORME) else ("(no se pudo crear el PDF: hace falta Word con "
                                                                "«pip install docx2pdf», o LibreOffice)")
         if messagebox.askyesno("Informe", f"Informe en normas APA generado en la carpeta documentos:\n\n"
                                f"Word: {WORD_INFORME}\nPDF: {pdf}\n\n¿Quieres abrir el Word?", parent=self):
