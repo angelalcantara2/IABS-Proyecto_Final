@@ -1,6 +1,5 @@
 """
 main.py: interfaz gráfica (tkinter) del SSDC.
-
 Permite elegir un paciente, correr BFS, UCS o A*, ver la ruta en rojo sobre
 el grafo y abrir o exportar el reporte de los 12 pacientes.
 """
@@ -14,7 +13,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from lector import lectura_datos, obtener_paciente, ruta_archivo
-from grafo import construir_grafo, calcular_costo_arista, calcular_costo_optimista
+from grafo import construir_grafo, calcular_costo_arista
 from busqueda import bfs, ucs, a_estrella, construir_heuristica
 
 
@@ -30,8 +29,7 @@ COLOR_TITULO = "#1f3b57"
 def grafo_del_paciente(p, matriz):
     """Construye el grafo del paciente y su heurística para A*."""
     costos = [calcular_costo_arista(fila, p) for _, fila in matriz.iterrows()]
-    costos_optimistas = [calcular_costo_optimista(fila, p) for _, fila in matriz.iterrows()]
-    G = construir_grafo(matriz, costos, costos_optimistas)
+    G = construir_grafo(matriz, costos)
     heuristica = construir_heuristica(G, p["Severidad_Diagnostico"])
     return G, heuristica
 

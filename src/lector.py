@@ -8,7 +8,7 @@ import pandas as pd
 # Ruta relativa a este archivo, para que funcione desde cualquier carpeta
 directorio_actual = os.path.dirname(os.path.abspath(__file__))
 nombre_archivo = "datos_clinicos.xlsx"
-ruta_archivo = os.path.join(directorio_actual, nombre_archivo)
+ruta_archivo = os.path.join(os.path.dirname(directorio_actual), "datos", nombre_archivo)
 
 def lectura_datos(path):
     """Devuelve (pacientes, matriz) como DataFrames."""
