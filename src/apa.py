@@ -6,7 +6,6 @@ apa.py: da formato APA 7 (trabajo de estudiante) al informe que arma armar_infor
 - Encabezados sin numeración: nivel 1 centrado en negrita, nivel 2 a la izquierda en negrita,
   nivel 3 en negrita cursiva y nivel 4 en la misma línea del párrafo.
 - Tablas y figuras con número en negrita, título en cursiva y nota; tablas solo con líneas horizontales.
-- Referencias en página nueva con sangría francesa.
 """
 import re
 import copy
@@ -220,22 +219,11 @@ def aplicar_apa(doc, titulos_tablas, figuras, ref, info):
         else:
             tipo[p._p] = "cuerpo"
 
-    # 4. Declaración de uso de IA antes de las referencias
-    h_ref = next(p for p in doc.paragraphs if p.text == "Referencias")
-    h_ia = par_antes(h_ref._p, "Declaración de uso de inteligencia artificial", negrita=True)
-    p_ia = par_antes(h_ref._p, info["decl_ia"])
+    # 4. Declaración de uso de IA antes del anexo
+    h_anx = next(p for p in doc.paragraphs if p.text.startswith("Anexo A"))
+    h_ia = par_antes(h_anx._p, "Declaración de uso de inteligencia artificial", negrita=True)
+    p_ia = par_antes(h_anx._p, info["decl_ia"])
     tipo[h_ia._p], tipo[p_ia._p] = "n2", "cuerpo"
-
-    # 5. Referencias con sangría francesa
-    en_ref = False
-    for p in doc.paragraphs:
-        if p.text == "Referencias":
-            en_ref = True
-            continue
-        if p.text.startswith("Anexo A"):
-            en_ref = False
-        if en_ref:
-            tipo[p._p] = "ref"
 
     # 6. Tablas: número, título, nota y bordes
     n, en_anexo = 0, False
@@ -293,9 +281,10 @@ def aplicar_apa(doc, titulos_tablas, figuras, ref, info):
     h_a = next(p for p in doc.paragraphs if p.text.startswith("Parte A"))
     autores = info["autores"]
     txt_aut = ", ".join(autores[:-1]) + " y " + autores[-1] if len(autores) > 1 else autores[0]
-    portada = ["", "", "", (info["titulo"], True), "", (txt_aut, False),
-               (f"{info['programa']}, {info['universidad']}", False), (info["curso"], False),
-               (info["docente"], False), (info["fecha"], False)]
+    inst = ", ".join(x for x in (info["programa"], info["universidad"]) if x)
+    portada = ["", "", "", (info["titulo"], True), "", (txt_aut, False), (inst, False),
+               (info["curso"], False), (info["docente"], False), (info["fecha"], False)]
+    portada = [x for x in portada if x == "" or x[0]]  # omite datos vacíos
     for item in portada:
         if item == "":
             q = par_antes(h_a._p, "")
