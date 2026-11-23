@@ -1,0 +1,6 @@
+pandas
+openpyxl
+networkx
+matplotlib
+python-docx
+docx2pdf

@@ -381,7 +381,8 @@ class AppSSDC(tk.Tk):
 
     def _generar_informe(self):
         try:
-            res = subprocess.run([sys.executable, SCRIPT_INFORME], cwd=DIR_SRC,
+            entorno = dict(os.environ, PYTHONIOENCODING="utf-8", MPLBACKEND="Agg")
+            res = subprocess.run([sys.executable, SCRIPT_INFORME], cwd=DIR_SRC, env=entorno,
                                  capture_output=True, text=True, encoding="utf-8", errors="replace")
             ok, salida = res.returncode == 0, (res.stdout + res.stderr).strip()
         except Exception as e:
@@ -395,7 +396,8 @@ class AppSSDC(tk.Tk):
             ultimas = "\n".join(salida.splitlines()[-8:])
             messagebox.showerror("Informe", f"No se pudo generar el informe.\n\n{ultimas}", parent=self)
             return
-        pdf = PDF_INFORME if os.path.exists(PDF_INFORME) else "(no se pudo crear el PDF)"
+        pdf = PDF_INFORME if os.path.exists(PDF_INFORME) else ("(no se pudo crear el PDF: hace falta Word con "
+                                                               "«pip install docx2pdf», o LibreOffice)")
         if messagebox.askyesno("Informe", f"Informe en normas APA generado en la carpeta documentos:\n\n"
                                f"Word: {WORD_INFORME}\nPDF: {pdf}\n\n¿Quieres abrir el Word?", parent=self):
             if sys.platform.startswith("win"):

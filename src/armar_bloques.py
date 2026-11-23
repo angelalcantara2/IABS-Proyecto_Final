@@ -577,5 +577,8 @@ par("Lectura: BFS es el más rápido pero se aleja del óptimo un 21 % en promed
 
 doc.save(salida)
 print("Word guardado:", salida)
-motor = exportar_pdf(salida, salida.replace(".docx", ".pdf"))
-print(f"PDF guardado ({motor}):", salida.replace(".docx", ".pdf"))
+try:
+    motor = exportar_pdf(salida, salida.replace(".docx", ".pdf"))
+    print(f"PDF guardado ({motor}):", salida.replace(".docx", ".pdf"))
+except Exception as e:
+    print("AVISO: el Word se generó, pero no se pudo crear el PDF.", e)

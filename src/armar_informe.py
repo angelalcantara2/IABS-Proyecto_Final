@@ -23,6 +23,7 @@ from docx.table import Table
 
 from lector import lectura_datos, ruta_archivo
 from reporte import generar_tabla, resumen_algoritmos, dir_res
+from pdf_util import exportar_pdf
 import simulaciones as sim
 
 raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -577,7 +578,8 @@ ult = llenar("5.4 Interpretación:", [
     f"promedio {dec(nodos_ruta, 1)} nodos y UCS expande en promedio {dec(ucs_t['Nodos Expandidos'].mean(), 1)}, "
     "así que el margen de ahorro es de muy pocos nodos por paciente. A* solo ahorra cuando h hace que la f de "
     "un nodo supere el costo óptimo"
-    + (f", y eso ocurre en {lista([f'{pid} (severidad {pac(pid)['Severidad_Diagnostico']})' for pid in redu])}."
+    + (", y eso ocurre en " + lista(["{} (severidad {})".format(pid, pac(pid)["Severidad_Diagnostico"])
+                                     for pid in redu]) + "."
        if redu else "."),
     f"**Simulación S5 (cuatro heurísticas).** Con h = 0, A* es UCS ({hh['h = 0 (UCS)']} nodos). Con la "
     f"heurística del equipo expande {hh['h severidad (equipo)']} y con c_min sin escalar "
@@ -656,8 +658,9 @@ nuevo_par_despues(t6,
       "es que salga de un peso económico sin que nadie se lo explique.", REF)
 
 cambio6 = list(S6[S6["Cambió"] == "Sí"]["ID"])
-txt_s6 = (f"Cambió la ruta de {lista([f'{pid} (a {S6[S6.ID == pid].iloc[0]['UCS con guardarraíl']})' for pid in cambio6])}; "
-          f"los otros {NP - len(cambio6)} conservaron su ruta."
+txt_s6 = ("Cambió la ruta de " + lista(["{} (a {})".format(pid, S6[S6.ID == pid].iloc[0]["UCS con guardarraíl"])
+                                       for pid in cambio6])
+          + f"; los otros {NP - len(cambio6)} conservaron su ruta."
           if cambio6 else f"Con los datos actuales ninguna ruta cambió: los {NP} pacientes ya cumplen ambos límites.")
 llenar("6.3 Recomendaciones de uso en un ambiente clínico real:", [
     "**Apoyo, no decisión.** La salida se presenta como sugerencia y siempre requiere la firma del "
@@ -746,42 +749,14 @@ for p in list(doc.paragraphs):
 
 
 
-def buscar_soffice():
-    """Ruta de LibreOffice (PATH o carpetas típicas de Windows)."""
-    for nom in ["soffice", "libreoffice"]:
-        if shutil.which(nom):
-            return shutil.which(nom)
-    for patron in [r"C:\Program Files\LibreOffice\program\soffice.exe",
-                   r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"]:
-        hallados = glob.glob(patron)
-        if hallados:
-            return hallados[0]
-    return None
-
-
-def exportar_pdf(docx, pdf):
-    """Convierte el .docx a PDF: primero con Word (docx2pdf), si no con LibreOffice."""
-    try:
-        from docx2pdf import convert
-        convert(docx, pdf)
-        return "Word"
-    except Exception as e:
-        err_word = e
-    soffice = buscar_soffice()
-    if soffice:
-        subprocess.run([soffice, "--headless", "--convert-to", "pdf", "--outdir",
-                        os.path.dirname(pdf), docx], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return "LibreOffice"
-    raise RuntimeError(f"No se pudo crear el PDF. Instala docx2pdf (pip install docx2pdf) "
-                       f"con Word, o LibreOffice. Detalle: {err_word}")
-
-
 from apa import aplicar_apa
 aplicar_apa(doc, TIT, FIGS, REF, dict(titulo=TITULO, autores=INTEGRANTES, universidad=UNIVERSIDAD,
                                       programa=PROGRAMA, curso=ASIGNATURA, docente=DOCENTE,
                                       fecha=FECHA, decl_ia=DECL_IA))
 doc.save(salida)
 print("Word guardado:", salida)
-motor = exportar_pdf(salida, salida_pdf)
-print(f"PDF guardado ({motor}):", salida_pdf)
+try:
+    motor = exportar_pdf(salida, salida_pdf)
+    print(f"PDF guardado ({motor}):", salida_pdf)
+except Exception as e:  # sin Word ni LibreOffice: el Word queda listo igual
+    print("AVISO: el Word se generó, pero no se pudo crear el PDF.", e)
