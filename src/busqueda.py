@@ -13,10 +13,9 @@ import heapq
 
 SEVERIDAD_MAXIMA = 5
 
-
 def bfs(grafo, inicio='Diagnostico', meta='Alta'):
     """Nivel 1: ruta con menos pasos, sin mirar costos ni riesgos."""
-    queue = deque([(inicio, [inicio], 0)])   # (nodo, ruta, costo)
+    queue = deque([(inicio, [inicio], 0)]) # (nodo, ruta, costo)
     visitados = set([inicio])
     pasos = 0
 
@@ -34,18 +33,17 @@ def bfs(grafo, inicio='Diagnostico', meta='Alta'):
 
     return None, None, pasos
 
-
 def ucs(grafo, inicio='Diagnostico', meta='Alta'):
     """Nivel 2: ruta de menor costo unificado. La meta se evalúa al extraer."""
     frontera = []
-    heapq.heappush(frontera, (0, inicio, [inicio]))   # (g, nodo, ruta)
+    heapq.heappush(frontera, (0, inicio, [inicio])) # (g, nodo, ruta)
     costos_minimos = {inicio : 0}
     pasos = 0
 
     while frontera:
         costo_actual, nodo_actual, camino_actual = heapq.heappop(frontera)
 
-        if costo_actual > costos_minimos[nodo_actual]:   # entrada obsoleta
+        if costo_actual > costos_minimos[nodo_actual]: # entrada obsoleta
             continue
         pasos += 1
 
@@ -61,49 +59,52 @@ def ucs(grafo, inicio='Diagnostico', meta='Alta'):
 
     return None, None, pasos
 
-
-# Pasos mínimos que faltan desde cada fase hasta Alta
-PASOS_A_LA_META = {'Diagnostico': 1, 'Post_Op_Mayor': 2, 'Post_Op_Menor': 2,
-                   'Consolidacion': 1, 'Alta': 0}
-
-
-def construir_heuristica(grafo, severidad):
-    """h(n) = (severidad/5) * pasos que faltan * costo de la arista más barata.
-
-    Cada paso que falta cuesta al menos la arista más barata, así que h
-    nunca sobreestima: es admisible y consistente.
+def construir_heuristica(grafo, meta='Alta'):
+    """h(n) = camino más corto hasta la meta, donde cada paso cuesta
+    la arista de salida más barata de su nodo de origen.
+    Cada paso real cuesta al menos eso, así que h nunca sobreestima.
     """
-    costo_minimo = min(datos['costo'] for _, _, datos in grafo.edges(data=True))
-    factor = severidad / SEVERIDAD_MAXIMA
-
-    heuristica = {}
+    minimo_saliente = {}
     for nodo in grafo.nodes():
-        heuristica[nodo] = factor * PASOS_A_LA_META[nodo] * costo_minimo
-    return heuristica
+        costos = [datos['costo'] for _, _, datos in grafo.out_edges(nodo, data=True)]
+        minimo_saliente[nodo] = min(costos, default=0)
 
+    h = {nodo: float('inf') for nodo in grafo.nodes()}
+    h[meta] = 0
+    for _ in range(len(h)): # repite hasta que se estabilice
+        for nodo in grafo.nodes():
+            for _, vecino in grafo.out_edges(nodo):
+                h[nodo] = min(h[nodo], minimo_saliente[nodo] + h[vecino])
+    return h
 
 def a_estrella(grafo, heuristica, inicio='Diagnostico', meta='Alta'):
-    """Nivel 3: como UCS, pero la frontera se ordena por f = g + h."""
+    """Nivel 3: A* con lista cerrada. La frontera se ordena por f = g + h."""
     frontera = []
-    heapq.heappush(frontera, (heuristica[inicio], 0, inicio, [inicio]))   # (f, g, nodo, ruta)
-    costos_minimos = {inicio : 0}
+    heapq.heappush(frontera, (heuristica[inicio], 0, inicio, [inicio])) # (f, g, nodo, ruta)
+    closed = set()
     pasos = 0
 
     while frontera:
-        f_actual, costo_actual, nodo_actual, camino_actual = heapq.heappop(frontera)
+        f, g, actual, ruta = heapq.heappop(frontera)
 
-        if costo_actual > costos_minimos[nodo_actual]:   # entrada obsoleta
-            continue
-        pasos += 1
+        if actual not in closed:
+            closed.add(actual)
+            pasos += 1
 
-        if nodo_actual == meta:
-            return camino_actual, costo_actual, pasos
+            if actual == meta:
+                return ruta, g, pasos
 
-        for origen, vecino, trat, datos in grafo.out_edges(nodo_actual, keys=True, data=True):
-            nuevo_costo = costo_actual + datos['costo']
-            if vecino not in costos_minimos or nuevo_costo < costos_minimos[vecino]:
-                costos_minimos[vecino] = nuevo_costo
-                nueva_ruta = camino_actual + [trat, vecino]
-                heapq.heappush(frontera, (nuevo_costo + heuristica[vecino], nuevo_costo, vecino, nueva_ruta))
+            for _, vecino, trat, datos in grafo.out_edges(actual, keys=True, data=True):
+                if vecino not in closed:
+                    nuevo_g = g + datos['costo']
+                    heapq.heappush(frontera, (nuevo_g + heuristica[vecino], nuevo_g, vecino, ruta + [trat, vecino]))
 
     return None, None, pasos
+
+
+
+
+
+
+
+    #xd

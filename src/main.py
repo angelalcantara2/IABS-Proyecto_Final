@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from lector import lectura_datos, obtener_paciente, ruta_archivo
-from grafo import construir_grafo, calcular_costo_arista
+from grafo import construir_grafo, calcular_costo_arista, calcular_costo_optimista
 from busqueda import bfs, ucs, a_estrella, construir_heuristica
 
 
@@ -27,13 +27,11 @@ POSICIONES = {"Diagnostico": (0, 0), "Post_Op_Mayor": (1, -0.6), "Post_Op_Menor"
 COLOR_FONDO = "#f5f7fa"
 COLOR_TITULO = "#1f3b57"
 
-
-# ---------- lógica ----------
-
 def grafo_del_paciente(p, matriz):
     """Construye el grafo del paciente y su heurística para A*."""
     costos = [calcular_costo_arista(fila, p) for _, fila in matriz.iterrows()]
-    G = construir_grafo(matriz, costos)
+    costos_optimistas = [calcular_costo_optimista(fila, p) for _, fila in matriz.iterrows()]
+    G = construir_grafo(matriz, costos, costos_optimistas)
     heuristica = construir_heuristica(G, p["Severidad_Diagnostico"])
     return G, heuristica
 
@@ -81,9 +79,6 @@ def tabla_comparativa(pacientes, matriz):
                           "Tiempo (ms)": round(tiempo_ms, 4)})
     return pd.DataFrame(filas)
 
-
-# ---------- interfaz ----------
-
 class AppSSDC(tk.Tk):
 
     def __init__(self, pacientes, matriz):
@@ -93,7 +88,7 @@ class AppSSDC(tk.Tk):
         self.paciente = None
         self.G = None
         self.heuristica = None
-        self.rutas = {}             # algoritmo -> ruta
+        self.rutas = {}            
 
         self.title("SSDC - Sistema de Soporte a Decisiones Clínicas")
         self.geometry("1280x760")
@@ -103,7 +98,6 @@ class AppSSDC(tk.Tk):
         self._armar_ventana()
         self._llenar_lista()
 
-    # ---------- apariencia ----------
     def _estilos(self):
         estilo = ttk.Style(self)
         if "clam" in estilo.theme_names():
@@ -121,7 +115,6 @@ class AppSSDC(tk.Tk):
         estilo.configure("Treeview", rowheight=26, font=("Segoe UI", 9))
         estilo.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
 
-    # ---------- estructura ----------
     def _armar_ventana(self):
         barra = ttk.Frame(self, padding=(14, 10))
         barra.pack(fill="x")
@@ -133,7 +126,6 @@ class AppSSDC(tk.Tk):
         cuerpo = ttk.Frame(self, padding=(14, 0, 14, 14))
         cuerpo.pack(fill="both", expand=True)
 
-        # ---- Columna izquierda: buscar y perfil ----
         izq = ttk.Frame(cuerpo, width=300)
         izq.pack(side="left", fill="y", padx=(0, 12))
         izq.pack_propagate(False)
@@ -201,7 +193,6 @@ class AppSSDC(tk.Tk):
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self._dibujar(None, "Elige un paciente para ver su grafo")
 
-    # ---------- lista de pacientes ----------
     def _llenar_lista(self):
         texto = self.var_buscar.get().strip().lower()
         self.lista.delete(0, "end")
@@ -240,7 +231,6 @@ class AppSSDC(tk.Tk):
         self.lbl_ayuda.configure(text="Pulsa un algoritmo para calcular la ruta.")
         self._dibujar(None, f'Grafo de {p["ID_Paciente"]} (costo unificado en cada flecha)')
 
-    # ---------- algoritmos ----------
     def correr(self, algoritmos):
         if self.paciente is None:
             return
@@ -258,7 +248,6 @@ class AppSSDC(tk.Tk):
                 nombre, " → ".join(tratamientos), f"${costo_usd:,.0f}",
                 f"{efectividad:.0%}", f"{costo:,.0f}", nodos, f"{tiempo_ms:.3f}"))
 
-        # Si se comparan los 3, se pinta la de UCS
         ultimo = "UCS" if len(algoritmos) > 1 else algoritmos[0]
         if ultimo in self.rutas:
             self.tabla.selection_set(ultimo)
@@ -274,7 +263,6 @@ class AppSSDC(tk.Tk):
         nombre = seleccion[0]
         self._dibujar(self.rutas[nombre], f'{self.paciente["ID_Paciente"]} - ruta de {nombre}')
 
-    # ---------- grafo ----------
     def _dibujar(self, ruta, titulo):
         ax = self.ax
         ax.clear()
@@ -309,10 +297,8 @@ class AppSSDC(tk.Tk):
         self.figura.tight_layout()
         self.canvas.draw()
 
-    # ---------- reporte de los 12 pacientes ----------
     def abrir_reporte(self):
         tabla = tabla_comparativa(self.pacientes, self.matriz)
-        # El enunciado pide imprimir la tabla en consola
         print("\n", tabla.to_string(index=False))
 
         ventana = tk.Toplevel(self)
@@ -355,7 +341,6 @@ class AppSSDC(tk.Tk):
         arbol.configure(yscrollcommand=barra.set)
         arbol.tag_configure("par", background="#eef3f8")
 
-        # Promedio de nodos expandidos por algoritmo
         promedios = tabla.groupby("Algoritmo")["Nodos Expandidos"].mean()
         texto_resumen = "Promedio de nodos expandidos:   " + "     ".join(
             f"{a}: {promedios[a]:.2f}" for a in ["BFS", "UCS", "A*"])

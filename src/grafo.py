@@ -18,18 +18,25 @@ PESOS_MINIMIZAR_COSTO = (1.0, 2000, 35000)
 PESOS_MAXIMIZAR_SUPERVIVENCIA = (0.1, 3000, 30000)
 
 
-def construir_grafo(matriz, costos):
-    """Arma el MultiDiGraph del paciente (admite aristas paralelas)."""
+def construir_grafo(matriz, costos, costos_optimistas=None):
+    """Arma el MultiDiGraph del paciente (admite aristas paralelas).
+
+    costos_optimistas es opcional; si no se da, A* se comporta como UCS.
+    """
+    if costos_optimistas is None:
+        costos_optimistas = [0] * len(costos)
+
     G = nx.MultiDiGraph()
-    for origen, destino, trat, costo, efect in zip(matriz["Fase_Origen"],
-                                                    matriz["Fase_Destino"],
-                                                    matriz["Tratamiento"],
-                                                    costos,
-                                                    matriz["Tasa_Efectividad_Base"]):
-        G.add_edge(origen, destino, key=trat, tratamiento=trat, costo=costo, efectividad=efect)
+    for origen, destino, trat, costo, optimista, efect in zip(matriz["Fase_Origen"],
+                                                              matriz["Fase_Destino"],
+                                                              matriz["Tratamiento"],
+                                                              costos,
+                                                              costos_optimistas,
+                                                              matriz["Tasa_Efectividad_Base"]):
+        G.add_edge(origen, destino, key=trat, tratamiento=trat, costo=costo,
+                   costo_optimista=optimista, efectividad=efect)
 
     return G
-
 
 def dibujar_grafo(G, titulo="Grafo del paciente", archivo=None, ruta=None):
     """Dibuja el grafo con los costos; si se da la ruta, la pinta en rojo."""
@@ -90,3 +97,12 @@ def calcular_costo_arista(row_tratamiento, row_paciente):
             + beta * producto_riesgos
             + gamma * castigo)
 
+
+def calcular_costo_optimista(row_tratamiento, row_paciente):
+    """Costo con riesgo fijo en 1: nunca supera el real, sirve para la heurística."""
+    alpha, beta, gamma = obtener_pesos(row_paciente)
+    castigo = -math.log(row_tratamiento['Tasa_Efectividad_Base'])
+
+    return (row_tratamiento['Costo_Financiero_Base'] * alpha
+            + beta * 1.0
+            + gamma * castigo)
