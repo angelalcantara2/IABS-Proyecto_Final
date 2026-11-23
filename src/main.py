@@ -3,7 +3,11 @@ main.py: interfaz gráfica (tkinter) del SSDC.
 Permite elegir un paciente, correr BFS, UCS o A*, ver la ruta en rojo sobre
 el grafo y abrir o exportar el reporte de los 12 pacientes.
 """
+import os
+import sys
 import time
+import threading
+import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -22,6 +26,10 @@ FACTORES = ["Insuficiencia_Renal", "Cardiopatia", "Edad_Avanzada_Fragil", "Inmun
 # Mismas posiciones que dibujar_grafo en grafo.py
 POSICIONES = {"Diagnostico": (0, 0), "Post_Op_Mayor": (1, -0.6), "Post_Op_Menor": (1, -1.8),
               "Consolidacion": (2, -1.2), "Alta": (3, 0)}
+
+DIR_SRC = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_INFORME = os.path.join(DIR_SRC, "armar_informe.py")
+PDF_INFORME = os.path.join(os.path.dirname(DIR_SRC), "docs", "SSDC_Entregables_2_y_3.pdf")
 
 COLOR_FONDO = "#f5f7fa"
 COLOR_TITULO = "#1f3b57"
@@ -120,6 +128,9 @@ class AppSSDC(tk.Tk):
                   style="Titulo.TLabel").pack(side="left")
         ttk.Button(barra, text="📊  Reporte comparativo (12 pacientes)",
                    style="Accion.TButton", command=self.abrir_reporte).pack(side="right")
+        self.btn_informe = ttk.Button(barra, text="📄  Exportar informe (PDF)",
+                                      style="Accion.TButton", command=self.exportar_informe)
+        self.btn_informe.pack(side="right", padx=(0, 8))
 
         cuerpo = ttk.Frame(self, padding=(14, 0, 14, 14))
         cuerpo.pack(fill="both", expand=True)
@@ -358,6 +369,36 @@ class AppSSDC(tk.Tk):
 
         combo.bind("<<ComboboxSelected>>", llenar)
         llenar()
+
+
+    # ---- Exportar informe: corre armar_informe.py sin congelar la ventana ----
+    def exportar_informe(self):
+        self.btn_informe.configure(text="⏳  Generando informe...", state="disabled")
+        self.config(cursor="watch")
+        threading.Thread(target=self._generar_informe, daemon=True).start()
+
+    def _generar_informe(self):
+        try:
+            res = subprocess.run([sys.executable, SCRIPT_INFORME], cwd=DIR_SRC,
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace")
+            ok, salida = res.returncode == 0, (res.stdout + res.stderr).strip()
+        except Exception as e:
+            ok, salida = False, str(e)
+        self.after(0, lambda: self._fin_informe(ok, salida))
+
+    def _fin_informe(self, ok, salida):
+        self.btn_informe.configure(text="📄  Exportar informe (PDF)", state="normal")
+        self.config(cursor="")
+        if not ok or not os.path.exists(PDF_INFORME):
+            ultimas = "\n".join(salida.splitlines()[-8:])
+            messagebox.showerror("Informe", f"No se pudo generar el informe.\n\n{ultimas}", parent=self)
+            return
+        if messagebox.askyesno("Informe", f"Informe generado en:\n{PDF_INFORME}\n\n¿Quieres abrir el PDF?",
+                               parent=self):
+            if sys.platform.startswith("win"):
+                os.startfile(PDF_INFORME)
+            else:
+                subprocess.Popen(["xdg-open" if sys.platform.startswith("linux") else "open", PDF_INFORME])
 
 
 def iniciar():
