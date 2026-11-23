@@ -3,10 +3,10 @@ simulaciones.py: simulaciones del pipeline para el análisis crítico (Entregabl
 
     python simulaciones.py
 
-S1  BFS sobre los 12 pacientes, y BFS si se quita Cuidado_Paliativo
-S2  UCS: paciente sin factores (P001) frente a paciente con todos (P004)
+S1  BFS sobre todos los pacientes, y BFS si se quita la opción paliativa
+S2  UCS: paciente con menos factores frente al de más factores
 S3  Mismo paciente cambiando solo la preferencia (los 12)
-S4  Barrido de gamma: cuántos pacientes reciben paliativo y umbral de P009
+S4  Barrido de gamma: cuántos pacientes reciben paliativo y umbral del caso de foco
 S5  A* con h = 0, h de severidad, h = c_min y h = h* (perfecta)
 S6  Guardarraíl ético: piso de efectividad y techo de riesgo por tratamiento
 
@@ -91,10 +91,48 @@ def flecha(trats):
     return " → ".join(trats)
 
 
+def paliativos(m, ini="Diagnostico", meta="Alta"):
+    """Tratamientos que van directo del inicio a la meta (la opción paliativa)."""
+    return list(m[(m["Fase_Origen"] == ini) & (m["Fase_Destino"] == meta)]["Tratamiento"])
+
+
+def es_paliativo(trats, m):
+    return len(trats) == 1 and trats[0] in paliativos(m)
+
+
+def n_factores(p):
+    return sum(int(p[f] == 1) for f in FACT)
+
+
+def casos(P, m):
+    """Pacientes de ejemplo elegidos desde los datos (no a mano).
+
+    complejo: el de más factores (empate: mayor severidad).
+    simple:   el de menos factores con la misma preferencia que el complejo (si hay).
+    foco:     el primero al que UCS le propone paliativo; si nadie, el que tiene la
+              menor diferencia entre su ruta y la opción paliativa.
+    """
+    P2 = P.assign(nf=[n_factores(p) for _, p in P.iterrows()])
+    comp = P2.sort_values(["nf", "Severidad_Diagnostico"], ascending=[False, False]).iloc[0]
+    misma = P2[P2["Minimizar_Costo_Financiero"] == comp["Minimizar_Costo_Financiero"]]
+    simp = (misma if len(misma) > 1 else P2).sort_values(["nf", "Severidad_Diagnostico"]).iloc[0]
+    margen, pals = {}, []
+    for _, p in P.iterrows():
+        G = construir_grafo(m, costos_pac(p, m))
+        ruta, c, _ = ucs(G)
+        if es_paliativo(ruta[1::2], m):
+            pals.append(p["ID_Paciente"])
+        else:
+            cp = [cc for t, cc in todas_rutas(G) if es_paliativo(t, m)]
+            margen[p["ID_Paciente"]] = (min(cp) - c) if cp else float("inf")
+    foco = pals[0] if pals else min(margen, key=margen.get)
+    return {"simple": simp["ID_Paciente"], "complejo": comp["ID_Paciente"], "foco": foco, "paliativo_ucs": pals}
+
+
 # ---------- simulaciones ----------
 def s1(P, m):
-    """BFS normal y BFS sin la arista de Cuidado_Paliativo."""
-    m2 = m[m["Tratamiento"] != "Cuidado_Paliativo"].reset_index(drop=True)
+    """BFS normal y BFS sin la opción paliativa."""
+    m2 = m[~m["Tratamiento"].isin(paliativos(m))].reset_index(drop=True)
     filas = []
     for _, p in P.iterrows():
         r1, _, _ = bfs(construir_grafo(m, costos_pac(p, m)))
@@ -112,10 +150,13 @@ def s1(P, m):
     return pd.DataFrame(filas)
 
 
-def s2(P, m):
-    """Costo unificado de cada arista para P001 y P004."""
+def s2(P, m, ids=None):
+    """Costo unificado de cada arista para el paciente simple y el complejo."""
+    if ids is None:
+        cs = casos(P, m)
+        ids = [cs["simple"], cs["complejo"]]
     filas = []
-    for pid in ["P001", "P004"]:
+    for pid in ids:
         p = P[P["ID_Paciente"] == pid].iloc[0]
         for (_, f), c in zip(m.iterrows(), costos_pac(p, m)):
             filas.append({"ID": pid, "Tratamiento": f["Tratamiento"],
@@ -142,26 +183,28 @@ def s3(P, m):
     return pd.DataFrame(filas)
 
 
-def s4(P, m, gammas=range(0, 60001, 2500)):
+def s4(P, m, gammas=range(0, 60001, 2500), foco=None):
     """Barrido de gamma (alfa y beta fijos de cada preferencia)."""
+    foco = foco or casos(P, m)["foco"]
     filas = []
     for g in gammas:
         n_pal, rutas_p9 = 0, None
         for _, p in P.iterrows():
             a, b, _ = gf.obtener_pesos(p)
             ru, _, _ = ucs(construir_grafo(m, costos_pac(p, m, (a, b, g))))
-            n_pal += ru[1::2] == ["Cuidado_Paliativo"]
-            if p["ID_Paciente"] == "P009":
+            n_pal += es_paliativo(ru[1::2], m)
+            if p["ID_Paciente"] == foco:
                 rutas_p9 = flecha(ru[1::2])
-        filas.append({"gamma": g, "Pacientes con paliativo": n_pal, "Ruta P009": rutas_p9})
+        filas.append({"gamma": g, "Pacientes con paliativo": n_pal, "Ruta del caso de foco": rutas_p9})
     return pd.DataFrame(filas)
 
 
-def umbral_gamma(P, m, pid="P009", lo=0, hi=200000):
+def umbral_gamma(P, m, pid=None, lo=0, hi=200000):
     """Menor gamma con el que el paciente deja de recibir paliativo (bisección)."""
+    pid = pid or casos(P, m)["foco"]
     p = P[P["ID_Paciente"] == pid].iloc[0]
     a, b, _ = gf.obtener_pesos(p)
-    pal = lambda g: ucs(construir_grafo(m, costos_pac(p, m, (a, b, g))))[0][1::2] == ["Cuidado_Paliativo"]
+    pal = lambda g: es_paliativo(ucs(construir_grafo(m, costos_pac(p, m, (a, b, g))))[0][1::2], m)
     if pal(hi):
         return None
     for _ in range(60):
@@ -236,13 +279,19 @@ def estilo(ax):
 def fig_s4(df, ruta):
     fig, ax = plt.subplots(figsize=(6.4, 2.8), dpi=200)
     ax.step(df["gamma"], df["Pacientes con paliativo"], where="post", color=AZUL, linewidth=2)
-    ax.axvline(35000, color="#52514e", linestyle="--", linewidth=1)
-    ax.axvline(30000, color="#52514e", linestyle=":", linewidth=1)
-    ax.text(35500, 10.5, "γ min. costo\n(35.000)", fontsize=7, color="#52514e")
-    ax.text(29500, 7.2, "γ max. superv.\n(30.000)", fontsize=7, color="#52514e", ha="right")
+    ymax = max(df["Pacientes con paliativo"].max(), 1)
+    g_min, g_max = gf.PESOS_MINIMIZAR_COSTO[2], gf.PESOS_MAXIMIZAR_SUPERVIVENCIA[2]
+    fmt = lambda v: f"{v:,.0f}".replace(",", ".")
+    ax.axvline(g_min, color="#52514e", linestyle="--", linewidth=1)
+    ax.axvline(g_max, color="#52514e", linestyle=":", linewidth=1)
+    izq, der = (g_max, g_min) if g_max < g_min else (g_min, g_max)
+    ax.text(der * 1.015, ymax * 0.85, f"γ {'min. costo' if der == g_min else 'max. superv.'}\n({fmt(der)})",
+            fontsize=7, color="#52514e")
+    ax.text(izq * 0.985, ymax * 0.6, f"γ {'max. superv.' if izq == g_max else 'min. costo'}\n({fmt(izq)})",
+            fontsize=7, color="#52514e", ha="right")
     ax.set_xlabel("γ (peso de la efectividad)", fontsize=8, color="#52514e")
-    ax.set_ylabel("Pacientes con\nCuidado_Paliativo", fontsize=8, color="#52514e")
-    ax.set_ylim(0, 12.5)
+    ax.set_ylabel("Pacientes con\nopción paliativa", fontsize=8, color="#52514e")
+    ax.set_ylim(0, ymax * 1.05 + 0.5)
     ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, _: f"{x/1000:.0f}k"))
     estilo(ax)
     fig.tight_layout()
@@ -273,16 +322,18 @@ if __name__ == "__main__":
     pd.set_option("display.width", 250)
     pd.set_option("display.max_colwidth", 60)
 
-    res = {"S1_BFS": s1(P, m), "S2_UCS_P001_P004": s2(P, m), "S3_Preferencia": s3(P, m),
+    cs = casos(P, m)
+    res = {"S1_BFS": s1(P, m), "S2_UCS_simple_complejo": s2(P, m), "S3_Preferencia": s3(P, m),
            "S4_Barrido_gamma": s4(P, m), "S5_Heuristicas": s5(P, m), "S6_Guardarrail": s6(P, m),
-           "Rutas_P009": rutas_p(P, m, "P009"), "Rutas_P004": rutas_p(P, m, "P004"),
-           "Rutas_P005": rutas_p(P, m, "P005")}
+           "Rutas_foco": rutas_p(P, m, cs["foco"]), "Rutas_complejo": rutas_p(P, m, cs["complejo"]),
+           "Rutas_simple": rutas_p(P, m, cs["simple"])}
     g9 = umbral_gamma(P, m)
 
     for k, df in res.items():
         print(f"\n===== {k} =====")
         print(df.to_string(index=False))
-    print(f"\nUmbral de gamma para que P009 deje el paliativo: {g9:,.0f}")
+    print(f"\nCasos de ejemplo: {cs}")
+    print(f"Umbral de gamma para que {cs['foco']} deje el paliativo: {g9}")
 
     with pd.ExcelWriter(os.path.join(dir_res, "simulaciones.xlsx")) as w:
         for k, df in res.items():

@@ -4,7 +4,7 @@ atendiendo los comentarios del profesor.
 
     python armar_bloques.py
 
-Salida: docs/SSDC_Bloques_y_Grafo_corregido.docx y .pdf
+Salida: documentos/SSDC_Bloques_y_Grafo_corregido.docx y .pdf
 """
 import os
 import math
@@ -28,7 +28,8 @@ import analisis_bloques as ab
 import simulaciones as sim
 
 raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-salida = os.path.join(raiz, "docs", "SSDC_Bloques_y_Grafo_corregido.docx")
+os.makedirs(os.path.join(raiz, "documentos"), exist_ok=True)
+salida = os.path.join(raiz, "documentos", "SSDC_Bloques_y_Grafo_corregido.docx")
 AUTORES = "Juan Nicolas Álvarez, Ángel Samuel Alcántara y Mateo Sánchez García"
 FUENTE = "Times New Roman"
 AZUL, NARANJA, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
@@ -223,39 +224,76 @@ def h2(t):
 N_TAB, N_FIG = [0], [0]
 
 
-def tabla(encab, filas, anchos, titulo, nota=None, tam=9):
+AZUL_OSC, ZEBRA, LINEA = "1F3B57", "F2F5F8", "BFC9D4"
+
+
+def borde_tabla(t):
+    """Bordes finos grises y márgenes internos amplios."""
+    tblPr = t._tbl.tblPr
+    bs = OxmlElement("w:tblBorders")
+    for lado in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        b = OxmlElement(f"w:{lado}")
+        b.set(qn("w:val"), "single"); b.set(qn("w:sz"), "4"); b.set(qn("w:color"), LINEA)
+        bs.append(b)
+    tblPr.append(bs)
+    mar = OxmlElement("w:tblCellMar")
+    for lado, v in (("top", 70), ("bottom", 70), ("left", 110), ("right", 110)):
+        x = OxmlElement(f"w:{lado}"); x.set(qn("w:w"), str(v)); x.set(qn("w:type"), "dxa"); mar.append(x)
+    tblPr.append(mar)
+
+
+def sombra(celda, color):
+    sh = OxmlElement("w:shd")
+    sh.set(qn("w:val"), "clear"); sh.set(qn("w:color"), "auto"); sh.set(qn("w:fill"), color)
+    celda._tc.get_or_add_tcPr().append(sh)
+
+
+def tabla(encab, filas, anchos, titulo, nota=None, tam=10.5):
     N_TAB[0] += 1
-    c = par(f"**Tabla {N_TAB[0]}.** __{titulo}__", tam=10)
+    c = par(f"**Tabla {N_TAB[0]}.** __{titulo}__", tam=11)
     c.paragraph_format.keep_with_next = True
-    c.paragraph_format.space_after = Pt(2)
+    c.paragraph_format.space_before = Pt(6)
+    c.paragraph_format.space_after = Pt(4)
     t = doc.add_table(rows=1, cols=len(encab))
-    t.style = "Table Grid"
     t.autofit = False
+    t.alignment = 1
+    borde_tabla(t)
     for fila_i, vals in enumerate([encab] + filas):
         cells = t.rows[0].cells if fila_i == 0 else t.add_row().cells
         for j, v in enumerate(vals):
             cells[j].width = Inches(anchos[j])
+            cells[j].vertical_alignment = 1
             p = cells[j].paragraphs[0]
             p.paragraph_format.space_after = Pt(0)
-            p.paragraph_format.line_spacing = 1.0
+            p.paragraph_format.line_spacing = 1.1
             for i, trozo in enumerate(str(v).split("**")):
                 if trozo:
                     run = p.add_run(trozo)
                     run.font.size = Pt(tam)
                     run.bold = fila_i == 0 or i % 2 == 1
+                    if fila_i == 0:
+                        run.font.color.rgb = RGBColor(255, 255, 255)
             if fila_i == 0:
-                sh = OxmlElement("w:shd")
-                sh.set(qn("w:val"), "clear"); sh.set(qn("w:color"), "auto"); sh.set(qn("w:fill"), "D6EAF8")
-                cells[j]._tc.get_or_add_tcPr().append(sh)
+                sombra(cells[j], AZUL_OSC)
+            elif fila_i % 2 == 0:
+                sombra(cells[j], ZEBRA)
     for j, w in enumerate(anchos):
         t.columns[j].width = Inches(w)
-    tr = t.rows[0]._tr.get_or_add_trPr()
-    th = OxmlElement("w:tblHeader"); tr.append(th)
+    for k, row in enumerate(t.rows):
+        row.height = Inches(0.32 if k == 0 else 0.28)
+        trPr = row._tr.get_or_add_trPr()
+        cs = OxmlElement("w:cantSplit"); trPr.append(cs)
+    th = OxmlElement("w:tblHeader"); t.rows[0]._tr.get_or_add_trPr().append(th)
+    if nota:  # tabla y nota en la misma página
+        for row in t.rows:
+            for cel in row.cells:
+                for q in cel.paragraphs:
+                    q.paragraph_format.keep_with_next = True
     if nota:
-        p = par(f"__Nota.__ {nota}", tam=9.5)
+        p = par(f"__Nota.__ {nota}", tam=10)
     else:
         p = par("", tam=4)
-    p.paragraph_format.space_before = Pt(3)
+    p.paragraph_format.space_before = Pt(4)
     return t
 
 
@@ -316,7 +354,7 @@ tabla(["Bloque", "Recibe", "Qué hace", "Devuelve"], [
     ["B6. Informe", "La tabla de B5 y las simulaciones",
      "Analiza por qué BFS falla, cómo UCS equilibra el riesgo, qué aporta la heurística y la parte ética.",
      "Informe en PDF"],
-], [1.15, 1.5, 2.35, 1.5], "Entrada, proceso y salida de cada bloque", tam=8.5)
+], [1.15, 1.5, 2.35, 1.5], "Entrada, proceso y salida de cada bloque")
 
 h2("1.1 Bloque B2: cómo se calcula el costo de cada arista")
 par("Para un paciente p y un tratamiento (arista) e, B2 calcula:")
@@ -419,7 +457,7 @@ tabla(["Arista", "Tramo", "Π", "α·plata", "β·Π", "γ·castigo", "C(e, P004
       [[r["Tratamiento"], r["Tramo"].replace("Post_Op_", "PO_").replace("Consolidacion", "Consolid.")
         .replace("Diagnostico", "Diagnóst."), d(r["Π"], 3), n0(r["α·plata"]), n0(r["β·Π"]), n0(r["γ·castigo"]),
         f"**{n0(r['C'])}**"] for _, r in DE.iterrows()],
-      [1.35, 1.75, 0.6, 0.65, 0.65, 0.75, 0.75], "Costo de cada arista para el paciente P004", tam=8.5)
+      [1.35, 1.75, 0.6, 0.65, 0.65, 0.75, 0.75], "Costo de cada arista para el paciente P004")
 
 h2("1.5 Bloque B4: un solo módulo de búsqueda")
 par("Los tres algoritmos siguen el mismo ciclo; solo cambia cómo se ordena la frontera:")
@@ -520,7 +558,7 @@ tabla(["Métrica", "Cómo se calcula", "Qué compara"], [
     ["Ramificación efectiva b*", "N + 1 = 1 + b* + … + (b*)^d, N = generados, d = longitud", "Qué tan dirigida es la búsqueda"],
     ["Tiempo de cómputo", "Promedio de 500 ejecuciones con time.perf_counter", "Velocidad"],
     ["Concordancia", "Pacientes en que la ruta coincide con la de UCS", "Si el algoritmo llega al óptimo"],
-], [1.5, 2.8, 2.2], "Métricas propuestas para comparar los algoritmos", tam=8.5)
+], [1.5, 2.8, 2.2], "Métricas propuestas para comparar los algoritmos")
 r_ = MR.set_index("Algoritmo")
 cols = [("Brecha %", "Brecha prom.", lambda v: f"{d(v,1)} %"), ("Efectividad", "Efect. prom.", lambda v: f"{d(v*100,1)} %"),
         ("Riesgo máx.", "Riesgo máx. prom.", lambda v: d(v, 2)), ("Expandidos", "Expandidos", lambda v: str(int(v))),

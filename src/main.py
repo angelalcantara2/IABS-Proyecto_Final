@@ -29,7 +29,9 @@ POSICIONES = {"Diagnostico": (0, 0), "Post_Op_Mayor": (1, -0.6), "Post_Op_Menor"
 
 DIR_SRC = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_INFORME = os.path.join(DIR_SRC, "armar_informe.py")
-PDF_INFORME = os.path.join(os.path.dirname(DIR_SRC), "docs", "SSDC_Entregables_2_y_3.pdf")
+DIR_DOCUMENTOS = os.path.join(os.path.dirname(DIR_SRC), "documentos")
+WORD_INFORME = os.path.join(DIR_DOCUMENTOS, "SSDC_Entregables_2_y_3.docx")
+PDF_INFORME = os.path.join(DIR_DOCUMENTOS, "SSDC_Entregables_2_y_3.pdf")
 
 COLOR_FONDO = "#f5f7fa"
 COLOR_TITULO = "#1f3b57"
@@ -128,7 +130,7 @@ class AppSSDC(tk.Tk):
                   style="Titulo.TLabel").pack(side="left")
         ttk.Button(barra, text="📊  Reporte comparativo (12 pacientes)",
                    style="Accion.TButton", command=self.abrir_reporte).pack(side="right")
-        self.btn_informe = ttk.Button(barra, text="📄  Exportar informe (PDF)",
+        self.btn_informe = ttk.Button(barra, text="📄  Exportar informe APA (Word y PDF)",
                                       style="Accion.TButton", command=self.exportar_informe)
         self.btn_informe.pack(side="right", padx=(0, 8))
 
@@ -387,18 +389,19 @@ class AppSSDC(tk.Tk):
         self.after(0, lambda: self._fin_informe(ok, salida))
 
     def _fin_informe(self, ok, salida):
-        self.btn_informe.configure(text="📄  Exportar informe (PDF)", state="normal")
+        self.btn_informe.configure(text="📄  Exportar informe APA (Word y PDF)", state="normal")
         self.config(cursor="")
-        if not ok or not os.path.exists(PDF_INFORME):
+        if not ok or not os.path.exists(WORD_INFORME):
             ultimas = "\n".join(salida.splitlines()[-8:])
             messagebox.showerror("Informe", f"No se pudo generar el informe.\n\n{ultimas}", parent=self)
             return
-        if messagebox.askyesno("Informe", f"Informe generado en:\n{PDF_INFORME}\n\n¿Quieres abrir el PDF?",
-                               parent=self):
+        pdf = PDF_INFORME if os.path.exists(PDF_INFORME) else "(no se pudo crear el PDF)"
+        if messagebox.askyesno("Informe", f"Informe en normas APA generado en la carpeta documentos:\n\n"
+                               f"Word: {WORD_INFORME}\nPDF: {pdf}\n\n¿Quieres abrir el Word?", parent=self):
             if sys.platform.startswith("win"):
-                os.startfile(PDF_INFORME)
+                os.startfile(WORD_INFORME)
             else:
-                subprocess.Popen(["xdg-open" if sys.platform.startswith("linux") else "open", PDF_INFORME])
+                subprocess.Popen(["xdg-open" if sys.platform.startswith("linux") else "open", WORD_INFORME])
 
 
 def iniciar():

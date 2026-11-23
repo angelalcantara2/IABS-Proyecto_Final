@@ -20,6 +20,7 @@ from busqueda import bfs, ucs, a_estrella, construir_heuristica
 ALGORITMOS = ["BFS", "UCS", "A*"]
 COLS_BASE = ["ID_Paciente", "Algoritmo", "Ruta Propuesta", "Costo Económico", "Nodos Expandidos"]
 dir_res = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resultados")
+os.makedirs(dir_res, exist_ok=True)
 
 
 def grafo_pac(p, matriz):

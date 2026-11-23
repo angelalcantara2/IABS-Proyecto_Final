@@ -1,6 +1,6 @@
 """
 armar_informe.py: llena la plantilla de los entregables 2 y 3 con los resultados
-de reporte.py y simulaciones.py, la guarda en docs/ y la exporta a PDF.
+de reporte.py y simulaciones.py, la guarda en documentos/ (Word) y la exporta a PDF.
 
     python armar_informe.py
 
@@ -27,13 +27,15 @@ import simulaciones as sim
 
 raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 plantilla = os.path.join(raiz, "docs", "SSDC_Plantilla_Entregables_2_y_3_actualizada.docx")
-salida = os.path.join(raiz, "docs", "SSDC_Entregables_2_y_3.docx")
+carpeta_salida = os.path.join(raiz, "documentos")
+os.makedirs(carpeta_salida, exist_ok=True)
+salida = os.path.join(carpeta_salida, "SSDC_Entregables_2_y_3.docx")
 salida_pdf = salida.replace(".docx", ".pdf")
 
 ASIGNATURA = "Búsqueda y Optimización de Soluciones (IABS)"
-UNIVERSIDAD = "[COMPLETAR universidad]"
-PROGRAMA = "[COMPLETAR facultad o programa]"
-DOCENTE = "[COMPLETAR nombre del docente]"
+UNIVERSIDAD = ""   # opcional: se omite de la portada si está vacío
+PROGRAMA = ""
+DOCENTE = ""
 FECHA = "22 de noviembre de 2026"
 TITULO = "Sistema de Soporte a Decisiones Clínicas (SSDC): Reporte Comparativo y Análisis Crítico"
 DECL_IA = ("El módulo de reporte (reporte.py), el script de simulaciones (simulaciones.py) y el "
@@ -197,29 +199,87 @@ def borrar(p):
     p._p.getparent().remove(p._p)
 
 
-# ---------- datos ----------
+# ---------- datos (todo sale del Excel; nada fijo) ----------
+import math
+import grafo as gf
+from grafo import construir_grafo
+
 P, m = lectura_datos(ruta_archivo)
+NP, NT = len(P), len(m)
 tabla = generar_tabla(P, m)
 res = resumen_algoritmos(tabla)
-S1, S2, S3 = sim.s1(P, m), sim.s2(P, m), sim.s3(P, m)
-S4, S5, S6 = sim.s4(P, m), sim.s5(P, m), sim.s6(P, m)
-R9 = sim.rutas_p(P, m, "P009")
-g9 = sim.umbral_gamma(P, m)
+CS = sim.casos(P, m)
+SIM, COMP, FOCO, PALS_UCS = CS["simple"], CS["complejo"], CS["foco"], CS["paliativo_ucs"]
+PAL = sim.paliativos(m)
+PALN = PAL[0] if PAL else "la opción paliativa"
+S1, S2, S3 = sim.s1(P, m), sim.s2(P, m, [SIM, COMP]), sim.s3(P, m)
+S4, S5 = sim.s4(P, m, foco=FOCO), sim.s5(P, m)
+PISO, TECHO = 0.30, 3.0
+S6 = sim.s6(P, m, piso=PISO, techo=TECHO)
+RF = sim.rutas_p(P, m, FOCO)
+gF = sim.umbral_gamma(P, m, FOCO)
 sim.fig_s4(S4, os.path.join(dir_res, "fig_barrido_gamma.png"))
 sim.fig_s5(S5, os.path.join(dir_res, "fig_heuristicas.png"))
 
+G0 = construir_grafo(m, sim.costos_pac(P.iloc[0], m))
+FASES = list(G0.nodes())
+N_RUTAS = len(sim.todas_rutas(G0))
+PARALELAS = sorted({(u, v) for u, v, k in G0.edges(keys=True) if G0.number_of_edges(u, v) > 1})
+
+
+def pac(pid):
+    return P[P["ID_Paciente"] == pid].iloc[0]
+
+
+def perf(pid):
+    return sim.perfil(pac(pid))
+
+
+def lista(xs):
+    xs = list(xs)
+    if not xs:
+        return "ninguno"
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " y " + xs[-1]
+
+
+def de(n, N):
+    """'los 12' si son todos; si no, '7 de 12'."""
+    return f"los {N}" if n == N else f"{n} de {N}"
+
+
+def pref_inf(pid):
+    return "minimizar costo" if pac(pid)["Minimizar_Costo_Financiero"] == 1 else "maximizar supervivencia"
+
+
+NOM_FAC = {"Insuficiencia_Renal": "renal", "Cardiopatia": "cardio", "Edad_Avanzada_Fragil": "edad",
+           "Inmunosupresion": "inmuno"}
+
+
+def pref(pid):
+    return "minimiza costo" if pac(pid)["Minimizar_Costo_Financiero"] == 1 else "maximiza supervivencia"
+
+
+def pesos_txt(t):
+    a, b, g = t
+    return f"{dec(a, 1)}; {n0(b)}; {n0(g)}"
+
+
+PESOS_TXT = {str(gf.PESOS_MINIMIZAR_COSTO): pesos_txt(gf.PESOS_MINIMIZAR_COSTO),
+             str(gf.PESOS_MAXIMIZAR_SUPERVIVENCIA): pesos_txt(gf.PESOS_MAXIMIZAR_SUPERVIVENCIA)}
 fila = lambda pid, alg: tabla[(tabla["ID_Paciente"] == pid) & (tabla["Algoritmo"] == alg)].iloc[0]
-s3 = lambda pid, pref: S3[(S3["ID"] == pid) & S3["Preferencia simulada"].str.startswith(pref)].iloc[0]
-pal_max = [r["ID"] for _, r in S3.iterrows()
-           if r["Preferencia simulada"] == "Min. costo" and r["Ruta UCS"] == "Cuidado_Paliativo"]
-
-# ---------- portada ----------
-
-
+s3 = lambda pid, pr: S3[(S3["ID"] == pid) & S3["Preferencia simulada"].str.startswith(pr)].iloc[0]
+c2 = lambda pid, t: S2[(S2["ID"] == pid) & (S2["Tratamiento"] == t)].iloc[0]
+ucs_tr = {pid: fila(pid, "UCS")["Ruta Propuesta"].split(" → ") for pid in P["ID_Paciente"]}
+EF_PAL = m[m["Tratamiento"] == PALN]["Tasa_Efectividad_Base"].iloc[0] if PAL else None
+efs_ucs = tabla[(tabla["Algoritmo"] == "UCS") & ~tabla["Ruta Propuesta"].isin(PAL)]["Efectividad Estimada"]
+ids_max = [p["ID_Paciente"] for _, p in P.iterrows() if p["Minimizar_Costo_Financiero"] != 1]
+pal_max = [pid for pid in ids_max if s3(pid, "Min")["Ruta UCS"] in PAL]
+cur_max = [pid for pid in ids_max if pid not in pal_max]
+CASOS = list(dict.fromkeys([SIM, COMP]))
 
 # ---------- Parte A ----------
 llenar("[COMPLETAR]", [
-    "El módulo **reporte.py** lee el Excel, recorre los 12 pacientes y, para cada uno, construye su "
+    f"El módulo **reporte.py** lee el Excel, recorre los {NP} pacientes y, para cada uno, construye su "
     "grafo con el costo unificado y ejecuta BFS, UCS y A* sobre el mismo grafo. Cada ejecución "
     "devuelve la ruta, el costo y los nodos expandidos. La tabla se **imprime en consola** agrupada "
     "por paciente y se **exporta** a resultados/reporte_comparativo.csv y a "
@@ -234,18 +294,17 @@ celda(t0.rows[4].cells[1],
       "unificado C con el que deciden UCS y A*.")
 
 t1 = T[1]
-filas_a3 = []
-for _, f in tabla.iterrows():
-    filas_a3.append([f["ID_Paciente"], f["Algoritmo"], corta(f["Ruta Propuesta"]),
-                     f"${n0(f['Costo Económico'])} (C {n0(f['Costo Unificado'])})",
-                     f["Nodos Expandidos"]])
+filas_a3 = [[f["ID_Paciente"], f["Algoritmo"], corta(f["Ruta Propuesta"]),
+             f"${n0(f['Costo Económico'])} (C {n0(f['Costo Unificado'])})", f["Nodos Expandidos"]]
+            for _, f in tabla.iterrows()]
+ajustar_filas(t1, len(filas_a3))
 llenar_tabla(t1, filas_a3)
-TIT[t1._tbl] = ("Reporte comparativo de los 12 pacientes con los tres algoritmos",
+TIT[t1._tbl] = (f"Reporte comparativo de los {NP} pacientes con los tres algoritmos",
                 "C = costo unificado (α·USD + β·riesgo + γ·castigo). Cir. = cirugía; Laparos = "
                 "laparoscópica; Quimio = Quimio_Estandar; Inmuno = Inmunoterapia; Radio = Radioterapia.")
 anchos(t1, [1300, 1050, 3410, 2300, 1300])
 t2 = T[2]
-TIT[t2._tbl] = ("Resumen por algoritmo", "Costos promedio sobre los 12 pacientes.")
+TIT[t2._tbl] = ("Resumen por algoritmo", f"Costos promedio sobre los {NP} pacientes.")
 r = res.set_index("Algoritmo")
 llenar_tabla(t2, [[a, r.loc[a, "Rutas distintas"],
                    f"${n0(r.loc[a, 'Costo USD promedio'])} (C {n0(r.loc[a, 'Costo unificado promedio'])})",
@@ -261,20 +320,21 @@ llenar("[COMPLETAR]", [
     "supervivencia.",
     "El SSDC convierte ese problema en una búsqueda en un grafo: cada paciente tiene su propio grafo, "
     "cuyas aristas pesan según su perfil, y el sistema busca la ruta de Diagnostico a Alta. Comparamos "
-    "tres niveles de búsqueda sobre los 12 pacientes del Excel (BFS, UCS y A*) con tres criterios: "
+    f"tres niveles de búsqueda sobre los {NP} pacientes del Excel (BFS, UCS y A*) con tres criterios: "
     "la ruta propuesta, su costo y los nodos expandidos. Con simulaciones del propio pipeline "
     "analizamos además los riesgos éticos de usar la herramienta en un ambiente clínico real."])
 
+txt_par = (f" Hay aristas paralelas entre {lista([f'{u} y {v}' for u, v in PARALELAS])}, así que usamos un "
+           "MultiDiGraph de NetworkX." if PARALELAS else " Usamos un MultiDiGraph de NetworkX.")
 llenar("[COMPLETAR]", [
-    "**Estados y grafo.** Cinco fases (Diagnostico, Post_Op_Mayor, Post_Op_Menor, Consolidacion y "
-    "Alta) y ocho tratamientos como aristas dirigidas. Como Quimio_Estandar e Inmunoterapia salen de "
-    "las dos fases postoperatorias, usamos un MultiDiGraph de NetworkX (Hagberg et al., 2008). Hay cinco rutas posibles: "
-    "cuatro curativas de tres pasos y Cuidado_Paliativo, que va directo de Diagnostico a Alta.",
+    f"**Estados y grafo.** {len(FASES)} fases ({lista(FASES)}) y {NT} tratamientos como aristas "
+    f"dirigidas.{txt_par} Hay {N_RUTAS} rutas posibles de Diagnostico a Alta"
+    + (f", entre ellas {PALN}, que va directo de Diagnostico a Alta." if PAL else "."),
     "**Función de costo.** Cada arista pesa C = α·plata + β·riesgo + γ·castigo, donde plata es el "
     "Costo_Financiero_Base, riesgo es el producto de los multiplicadores de los factores que el "
     "paciente tiene (1 si no tiene ninguno) y castigo = −ln(Tasa_Efectividad_Base). Los pesos "
-    "dependen de la preferencia: **minimizar costo (α, β, γ) = (1,0; 2.000; 35.000)** y "
-    "**maximizar supervivencia (0,1; 3.000; 30.000)**.",
+    f"dependen de la preferencia: **minimizar costo (α, β, γ) = ({pesos_txt(gf.PESOS_MINIMIZAR_COSTO)})** y "
+    f"**maximizar supervivencia ({pesos_txt(gf.PESOS_MAXIMIZAR_SUPERVIVENCIA)})**.",
     "**Supuestos.** Los multiplicadores son independientes y se multiplican; la efectividad de una "
     "ruta es el producto de las efectividades (por eso usamos −ln, que vuelve suma un producto); el "
     "estado Alta es el mismo sin importar la ruta; y cada factor del paciente se empareja con una "
@@ -282,107 +342,194 @@ llenar("[COMPLETAR]", [
     "«Bloques y grafo»."])
 
 # 3. BFS
-p = llenar("3.1 Resultado observado:", [
-    f"BFS devolvió **Cuidado_Paliativo en los 12 pacientes**, con 4 nodos expandidos en cada caso "
-    f"(48 en total). La ruta no cambia entre pacientes porque BFS ignora los pesos: el perfil "
-    f"clínico no entra en la decisión. La efectividad estimada de esa ruta es del 20 %, frente a "
-    f"38–46 % de las rutas curativas que propone UCS."])
+bfs_t = tabla[tabla["Algoritmo"] == "BFS"]
+vc = bfs_t["Ruta Propuesta"].value_counts()
+if len(vc) == 1:
+    txt_bfs = f"BFS devolvió **{vc.index[0]} en los {NP} pacientes**"
+else:
+    txt_bfs = "BFS devolvió " + lista([f"**{rt}** en {n} pacientes" for rt, n in vc.items()])
+nb = bfs_t["Nodos Expandidos"]
+txt_nb = (f"con {nb.iloc[0]} nodos expandidos en cada caso" if nb.nunique() == 1
+          else f"con entre {nb.min()} y {nb.max()} nodos expandidos") + f" ({nb.sum()} en total)"
+ef_b = bfs_t["Efectividad Estimada"]
+txt_ef = (f"La efectividad estimada de esa ruta es del {pct(ef_b.iloc[0])}" if ef_b.nunique() == 1
+          else f"La efectividad estimada de sus rutas va de {pct(ef_b.min())} a {pct(ef_b.max())}")
+txt_ef += (f", frente a {pct(efs_ucs.min())}–{pct(efs_ucs.max())} de las rutas curativas que propone UCS."
+           if len(efs_ucs) else ".")
+llenar("3.1 Resultado observado:", [
+    f"{txt_bfs}, {txt_nb}. La ruta no cambia con el perfil porque BFS ignora los pesos: el perfil "
+    f"clínico no entra en la decisión. {txt_ef}"])
 
 t3 = T[3]
-TIT[t3._tbl] = ("Ruta de BFS frente a ruta de UCS en dos pacientes", "Entre paréntesis, la efectividad estimada de la ruta.")
-perf = lambda pid: sim.perfil(P[P["ID_Paciente"] == pid].iloc[0])
-llenar_tabla(t3, [[pid, perf(pid), "Cuidado Paliativo (20 %)",
+TIT[t3._tbl] = (f"Ruta de BFS frente a ruta de UCS en {len(CASOS)} pacientes",
+                "Entre paréntesis, la efectividad estimada de la ruta.")
+ajustar_filas(t3, len(CASOS))
+llenar_tabla(t3, [[pid, perf(pid),
+                   f"{corta(fila(pid, 'BFS')['Ruta Propuesta'])} ({pct(fila(pid, 'BFS')['Efectividad Estimada'])})",
                    f"{corta(fila(pid, 'UCS')['Ruta Propuesta'])} ({pct(fila(pid, 'UCS')['Efectividad Estimada'])})"]
-                  for pid in ["P001", "P004"]])
+                  for pid in CASOS])
 
-b4 = S1[S1["ID"] == "P004"].iloc[0]
+vc1 = S1["BFS sin paliativo"].value_counts()
+txt_s1 = (f"Elige {vc1.index[0]} para los {NP} pacientes, solo porque esas aristas aparecen primero en el Excel."
+          if len(vc1) == 1 else "Elige " + lista([f"{rt} en {n} pacientes" for rt, n in vc1.items()]) +
+          ", según el orden de las aristas en el Excel.")
 ult = llenar("3.3 Explicación:", [
-    "BFS minimiza el número de pasos, no el resultado clínico (Russell y Norvig, 2021). Cuidado_Paliativo es la única ruta de "
-    "un paso, así que siempre gana. El problema de fondo es que el estado Alta es el mismo nodo "
-    "cuando se llega con un tratamiento curativo que cuando se llega con cuidado paliativo: para BFS "
-    "«llegar al alta» es éxito, aunque la probabilidad de curación sea mínima. En un paciente sano "
-    "esto ya es inaceptable; en un paciente complejo es más grave porque sus diferencias son "
-    "justamente las que BFS no ve.",
-    "**Simulación S1b (BFS sin la opción paliativa).** Quitamos la arista de Cuidado_Paliativo para "
-    "ver qué elige BFS entre las rutas curativas. Elige Cirugia_Abierta → Quimio_Estandar → "
-    "Radioterapia para los 12 pacientes, solo porque esas aristas aparecen primero en el Excel. En los "
-    "pacientes complejos eso es peligroso:"])
+    "BFS minimiza el número de pasos, no el resultado clínico. "
+    + (f"{PALN} es la ruta más corta, así que siempre gana. " if PAL else "") +
+    "El problema de fondo es que el estado Alta es el mismo nodo cuando se llega con un tratamiento "
+    "curativo que cuando se llega con cuidado paliativo: para BFS «llegar al alta» es éxito, aunque la "
+    "probabilidad de curación sea mínima. En un paciente sano esto ya es inaceptable; en un paciente "
+    "complejo es más grave porque sus diferencias son justamente las que BFS no ve.",
+    f"**Simulación S1b (BFS sin la opción paliativa).** Quitamos {PALN} para ver qué elige BFS entre "
+    f"las rutas curativas. {txt_s1} En los pacientes complejos eso puede ser peligroso:"])
+S1c = S1.assign(nf=[sim.n_factores(pac(i)) for i in S1["ID"]])
+sel = S1c[S1c["nf"] >= 2] if (S1c["nf"] >= 2).any() else S1c
+sel = sel.sort_values(["Riesgo máx. BFS s/p", "nf"], ascending=False).head(6)
 t_s1 = clonar_tabla(T[3], ult,
                     ["Paciente", "Perfil", "BFS sin paliativo (riesgo máx.)", "UCS sin paliativo (riesgo máx.)"],
-                    [[r["ID"], r["Perfil"], f"{corta(r['BFS sin paliativo'])} ({dec(r['Riesgo máx. BFS s/p'])})",
-                      f"{corta(r['UCS sin paliativo'])} ({dec(r['Riesgo máx. UCS s/p'], 3)})"]
-                     for _, r in S1[S1["ID"].isin(["P003", "P004", "P008", "P012"])].iterrows()],
+                    [[r_["ID"], r_["Perfil"], f"{corta(r_['BFS sin paliativo'])} ({dec(r_['Riesgo máx. BFS s/p'])})",
+                      f"{corta(r_['UCS sin paliativo'])} ({dec(r_['Riesgo máx. UCS s/p'], 3)})"]
+                     for _, r_ in sel.iterrows()],
                     [1050, 2750, 2780, 2780])
-TIT[t_s1._tbl] = ("Rutas de BFS y UCS sin la opción paliativa en pacientes complejos (simulación S1b)", None)
+TIT[t_s1._tbl] = ("Rutas de BFS y UCS sin la opción paliativa en los pacientes con más factores (simulación S1b)", None)
+
+
+def peor_paso(pid, trats):
+    """Tratamiento de mayor riesgo de una ruta y sus multiplicadores activos."""
+    p = pac(pid)
+    mejor = max(trats, key=lambda t: sim.riesgo(p, m[m["Tratamiento"] == t].iloc[0]))
+    f = m[m["Tratamiento"] == mejor].iloc[0]
+    partes = [f"{NOM_FAC[k]} {dec(f[c], 1)}" for k, c in sim.FACT.items() if p[k] == 1 and f[c] != 1]
+    return mejor, sim.riesgo(p, f), " · ".join(partes)
+
+
+rc = S1[S1["ID"] == COMP].iloc[0]
+pp_t, pp_r, pp_m = peor_paso(COMP, rc["BFS sin paliativo"].split(" → "))
 nuevo_par_despues(t_s1,
-    f"Riesgo máx. = mayor producto de multiplicadores de un tratamiento de la ruta. En P004 y P012 "
-    f"(los cuatro factores), BFS propone una quimioterapia con riesgo {dec(b4['Riesgo máx. BFS s/p'], 0)} "
-    f"veces el basal (renal 4,0 · cardio 1,5 · edad 1,5 · inmuno 2,0) y una cirugía abierta de 11,25; "
-    f"UCS evita ambas y propone una ruta cuyo peor paso tiene riesgo {dec(b4['Riesgo máx. UCS s/p'], 3)}. "
-    f"La decisión de BFS depende del orden de las filas del Excel, no del paciente.", REF)
+    f"Riesgo máx. = mayor producto de multiplicadores de un tratamiento de la ruta. En {COMP} "
+    f"({perf(COMP)}), BFS propone {pp_t} con riesgo {dec(pp_r)} veces el basal"
+    + (f" ({pp_m})" if pp_m else "") +
+    f"; UCS propone una ruta cuyo peor paso tiene riesgo {dec(rc['Riesgo máx. UCS s/p'], 3)}. "
+    "La decisión de BFS depende del orden de las filas del Excel, no del paciente.", REF)
 
 # 4. UCS
 t4 = T[4]
-TIT[t4._tbl] = ("Ruta de UCS en un paciente sin factores de riesgo y en uno con los cuatro factores", None)
+TIT[t4._tbl] = ("Ruta de UCS en el paciente con menos factores de riesgo y en el que tiene más", None)
+ajustar_filas(t4, len(CASOS))
 llenar_tabla(t4, [[pid, perf(pid), corta(fila(pid, "UCS")["Ruta Propuesta"]),
-                   f"${n0(fila(pid, 'UCS')['Costo Económico'])} (C {n0(fila(pid, 'UCS')['Costo Unificado'])})"]
-                  for pid in ["P001", "P004"]])
-c = lambda pid, t, tramo=None: S2[(S2["ID"] == pid) & (S2["Tratamiento"] == t)].iloc[0]
-ult = nuevo_par_despues(t4,
-    f"Los dos pacientes quieren maximizar supervivencia; solo cambian los factores. En P001 la cirugía "
-    f"abierta cuesta C = {n0(c('P001','Cirugia_Abierta')['Costo unificado'])} y la laparoscópica "
-    f"{n0(c('P001','Cirugia_Laparos')['Costo unificado'])}, así que UCS elige la abierta. En P004 la "
-    f"abierta sube a {n0(c('P004','Cirugia_Abierta')['Costo unificado'])} (riesgo 11,25 por cardio, "
-    f"edad e inmuno) y la laparoscópica solo a {n0(c('P004','Cirugia_Laparos')['Costo unificado'])} "
-    f"(riesgo 1,716): UCS cambia de cirugía aunque cueste $3.500 más (simulación S2).", REF)
+                  f"${n0(fila(pid, 'UCS')['Costo Económico'])} (C {n0(fila(pid, 'UCS')['Costo Unificado'])})"]
+                 for pid in CASOS])
+primeros = [t for t in m[m["Fase_Origen"] == "Diagnostico"]["Tratamiento"] if t not in PAL]
 
-llenar("4.2 Tratamientos que UCS evita y por qué:", [
-    f"**Quimio_Estandar en insuficiencia renal.** Su multiplicador renal es 4,0 (el más alto de la "
-    f"matriz). En P004 se suma la inmunosupresión (2,0), la cardiopatía y la edad (1,5 cada una): "
-    f"riesgo 18 y C = {n0(c('P004','Quimio_Estandar')['Costo unificado'])}, frente a "
-    f"{n0(c('P004','Inmunoterapia')['Costo unificado'])} de la inmunoterapia. Ningún paciente renal "
-    f"con preferencia de supervivencia (P003, P004, P006, P012) recibe quimioterapia.",
-    "**Cirugia_Abierta en cardiopatía o edad avanzada.** Sus multiplicadores son 2,5 y 3,0. Por eso "
-    "P002, P003, P004, P008, P010 y P012 pasan a laparoscopía. P006, renal sin cardiopatía, mantiene "
-    "la abierta porque su multiplicador renal es 1,0.",
-    "**Lo que UCS no evita.** Los pacientes que minimizan costo sin factor renal (P005, P007, P011) "
-    "reciben Quimio_Estandar: con α = 1 los $22.000 de diferencia frente a la inmunoterapia pesan "
-    "más que su riesgo. P005, inmunosuprimido, acepta así un tratamiento con riesgo 2,0."])
+
+def opciones(pid):
+    p = pac(pid)
+    return ", ".join(f"{t} C = {n0(c2(pid, t)['Costo unificado'])} (riesgo {dec(c2(pid, t)['Riesgo (Π mult.)'], 3)})"
+                     for t in primeros)
+
+
+misma_pref = pref(SIM) == pref(COMP)
+d_usd = fila(COMP, "UCS")["Costo Económico"] - fila(SIM, "UCS")["Costo Económico"]
+ult = nuevo_par_despues(t4,
+    (f"Los dos pacientes prefieren {pref_inf(SIM)}; solo cambian los factores. " if misma_pref else
+     f"{SIM} {pref(SIM)} y {COMP} {pref(COMP)}. ") +
+    f"Primer paso en {SIM}: {opciones(SIM)}; UCS elige {ucs_tr[SIM][0]}. En {COMP}: {opciones(COMP)}; "
+    f"UCS elige {ucs_tr[COMP][0]}"
+    + (f", aunque la ruta completa cueste ${n0(d_usd)} más (simulación S2)." if d_usd > 0 else " (simulación S2)."),
+    REF)
+
+parrafos_42 = []
+for fac, col in sim.FACT.items():
+    con = [pid for pid in P["ID_Paciente"] if pac(pid)[fac] == 1]
+    peor = m.loc[m[col].idxmax()]
+    if not con or peor[col] <= 1:
+        continue
+    reciben = [pid for pid in con if peor["Tratamiento"] in ucs_tr[pid]]
+    nombre = {"Insuficiencia_Renal": "insuficiencia renal", "Cardiopatia": "cardiopatía",
+              "Edad_Avanzada_Fragil": "edad avanzada o fragilidad", "Inmunosupresion": "inmunosupresión"}[fac]
+    parrafos_42.append(
+        f"**{peor['Tratamiento']} en {nombre}.** Es el tratamiento con el multiplicador más alto para ese "
+        f"factor ({dec(peor[col], 1)}). De los {len(con)} pacientes con {nombre}, "
+        + (f"ninguno lo recibe." if not reciben else
+           f"{len(reciben)} lo recibe{'n' if len(reciben) > 1 else ''} ({lista(reciben)}).")
+        + ((" En los demás, UCS" if reciben else " UCS") + " lo evita porque su término β·Π crece con cada "
+           "factor que se suma." if len(reciben) < len(con) else ""))
+riesgosos = []
+for _, r_ in S3.iterrows():
+    if "(real)" not in r_["Preferencia simulada"] or r_["Ruta UCS"] in PAL:
+        continue
+    rutas_pid = sim.rutas_p(P, m, r_["ID"])
+    mas_segura = rutas_pid[~rutas_pid["Ruta"].isin(PAL)]["Riesgo máx."].min()
+    if r_["Riesgo máx."] > mas_segura + 1e-9:
+        riesgosos.append((r_["ID"], r_["Ruta UCS"], r_["Riesgo máx."], mas_segura))
+if riesgosos:
+    parrafos_42.append(
+        "**Lo que UCS no evita.** Algunos pacientes reciben una ruta más riesgosa aunque existe una curativa "
+        "más segura, porque su preferencia o el costo pesan más que la diferencia de riesgo: "
+        + lista([f"{pid} ({corta(rt)}, riesgo máx. {dec(rg)} frente a {dec(ms)} de la más segura, {pref(pid)})"
+                 for pid, rt, rg, ms in riesgosos]) + ".")
+else:
+    parrafos_42.append("**Lo que UCS no evita.** Con los datos actuales todos los pacientes con ruta curativa "
+                       "reciben la de menor riesgo máximo disponible.")
+llenar("4.2 Tratamientos que UCS evita y por qué:", parrafos_42)
 
 g0 = S4[S4["gamma"] == 0].iloc[0]["Pacientes con paliativo"]
+cas_pal = -math.log(EF_PAL) if EF_PAL else None
+ef_cur = RF[~RF["Ruta"].isin(PAL)]["Efectividad"]
+cas_cur = -math.log(ef_cur.max()) if len(ef_cur) else None
+ps = pac(SIM)
+r_sim0 = sim.ucs(construir_grafo(m, sim.costos_pac(ps, m, (*gf.obtener_pesos(ps)[:2], 0))))[0][1::2]
+segs = []
+for _, r_ in S4.iterrows():
+    if not segs or segs[-1][2] != r_["Pacientes con paliativo"]:
+        segs.append([r_["gamma"], r_["gamma"], r_["Pacientes con paliativo"]])
+    else:
+        segs[-1][1] = r_["gamma"]
+txt_segs = "; ".join(f"{int(n)} con γ = {n0(a)}" if a == b else f"{int(n)} entre γ = {n0(a)} y {n0(b)}"
+                     for a, b, n in segs)
 ult = llenar("4.3 La trampa de la fórmula y la corrección con γ:", [
-    f"Sin γ, la fórmula solo suma dinero y riesgo, y Cuidado_Paliativo es la ruta más barata en las "
-    f"dos cosas ($1.500 y riesgo 1). En el barrido de γ (simulación S4), con γ = 0 los "
-    f"**{g0} pacientes** reciben paliativo y UCS coincide con BFS. El término γ·(−ln efectividad) "
-    f"castiga las rutas poco efectivas: el paliativo paga γ·1,609 y la mejor ruta curativa γ·0,779. "
-    f"Antes y después en P001: con γ = 0 UCS propone paliativo; con γ = 30.000 propone Cirugia_Abierta "
-    f"→ Inmunoterapia → Radioterapia.",
-    "La figura muestra que el número de pacientes con paliativo cae por escalones: 12 hasta "
-    "γ = 10.000, 4 entre 20.000 y 27.500, 1 con los pesos actuales y 0 desde unos 52.500. Esto "
-    "deja ver que **la recomendación depende de un número que fijó el equipo**, no de un dato "
-    "clínico; volvemos a esto en el análisis ético."])
+    "Sin γ, la fórmula solo suma dinero y riesgo, y la opción paliativa es la más barata en las dos "
+    f"cosas. En el barrido de γ (simulación S4), con γ = 0 reciben {PALN} **{de(g0, NP)} pacientes**. "
+    "El término γ·(−ln efectividad) castiga las rutas poco efectivas"
+    + (f": la opción paliativa paga γ·{dec(cas_pal, 3)} y la curativa más efectiva γ·{dec(cas_cur, 3)}."
+       if cas_pal is not None and cas_cur is not None else ".")
+    + f" Antes y después en {SIM}: con γ = 0 UCS propone {sim.flecha(r_sim0)}; con los pesos del modelo "
+      f"propone {sim.flecha(ucs_tr[SIM])}.",
+    f"La figura muestra cómo cambia el número de pacientes con la opción paliativa: {txt_segs}. Con los "
+    f"pesos actuales la recibe{'n' if len(PALS_UCS) != 1 else ''} {len(PALS_UCS)}. Esto deja ver que **la recomendación depende de un número que "
+    "fijó el equipo**, no de un dato clínico; volvemos a esto en el análisis ético."])
 imagen_despues(ult, os.path.join(dir_res, "fig_barrido_gamma.png"), 6.0, 1,
-               "Pacientes a los que UCS propone Cuidado_Paliativo según el valor de γ",
+               "Pacientes a los que UCS propone la opción paliativa según el valor de γ",
                "α y β fijos según la preferencia de cada paciente. Las líneas verticales marcan el γ de "
                "cada preferencia en el modelo (simulación S4).")
 
-ult = llenar("4.4 Casos donde UCS aún propone paliativo:", [
-    f"Con los pesos actuales solo **P009** (severidad 3, insuficiencia renal, inmunosupresión, "
-    f"minimiza costo) recibe Cuidado_Paliativo. Sus cinco rutas ordenadas por costo unificado son:"])
-t_r9 = clonar_tabla(T[6], ult,
-                    ["Ruta", "Costo unificado", "USD", "Efectividad", "Riesgo máx."],
-                    [[corta(r["Ruta"]), n0(r["Costo unificado"]), f"${n0(r['USD'])}", pct(r["Efectividad"]),
-                      dec(r["Riesgo máx."], 1)] for _, r in R9.iterrows()],
+if PALS_UCS:
+    intro44 = (f"Con los pesos actuales {len(PALS_UCS)} paciente{'s' if len(PALS_UCS) > 1 else ''} "
+               f"recibe{'n' if len(PALS_UCS) > 1 else ''} {PALN}: {lista(PALS_UCS)}. Tomamos **{FOCO}** "
+               f"({perf(FOCO)}). Sus {len(RF)} rutas ordenadas por costo unificado son:")
+else:
+    intro44 = (f"Con los pesos actuales ningún paciente recibe {PALN}. El caso más cercano es **{FOCO}** "
+               f"({perf(FOCO)}), donde la opción paliativa queda más cerca de la ruta elegida. Sus "
+               f"{len(RF)} rutas ordenadas por costo unificado son:")
+ult = llenar("4.4 Casos donde UCS aún propone paliativo:", [intro44])
+t_r9 = clonar_tabla(T[6], ult, ["Ruta", "Costo unificado", "USD", "Efectividad", "Riesgo máx."],
+                    [[corta(r_["Ruta"]), n0(r_["Costo unificado"]), f"${n0(r_['USD'])}", pct(r_["Efectividad"]),
+                      dec(r_["Riesgo máx."], 1)] for _, r_ in RF.iterrows()],
                     [3760, 1500, 1300, 1400, 1400])
-TIT[t_r9._tbl] = ("Rutas posibles del paciente P009 ordenadas por costo unificado", "Riesgo máx. = mayor "
-                  "producto de multiplicadores de un tratamiento de la ruta.")
+TIT[t_r9._tbl] = (f"Rutas posibles del paciente {FOCO} ordenadas por costo unificado",
+                  "Riesgo máx. = mayor producto de multiplicadores de un tratamiento de la ruta.")
+cur = RF[~RF["Ruta"].isin(PAL)]
+barata, segura = cur.iloc[0], cur.sort_values(["Riesgo máx.", "Costo unificado"]).iloc[0]
+opuesta = s3(FOCO, "Max" if pac(FOCO)["Minimizar_Costo_Financiero"] == 1 else "Min")
+gap = abs(RF.iloc[1]["Costo unificado"] - RF.iloc[0]["Costo unificado"])
 nuevo_par_despues(t_r9,
-    f"El paliativo gana por {n0(R9.iloc[1]['Costo unificado'] - R9.iloc[0]['Costo unificado'])} "
-    f"puntos. Las curativas baratas usan quimioterapia (riesgo 8 por renal e inmuno) y las seguras "
-    f"usan inmunoterapia, que cuesta $25.000. Con α = 1, la diferencia en dólares supera el castigo "
-    f"por baja efectividad. El paliativo no sale porque P009 no pueda tratarse, sino de la "
-    f"combinación de su preferencia económica con el riesgo renal: con γ ≥ {n0(g9)} o con la "
-    f"preferencia de supervivencia, UCS propone Cirugia_Abierta → Inmunoterapia → Radioterapia.", REF)
+    f"La primera ruta gana por {n0(gap)} puntos. La curativa más barata es {barata['Ruta']} (riesgo máx. "
+    f"{dec(barata['Riesgo máx.'], 1)}) y la más segura es {segura['Ruta']} (${n0(segura['USD'])}, riesgo máx. "
+    f"{dec(segura['Riesgo máx.'], 1)}). "
+    + (f"El paliativo no sale porque {FOCO} no pueda tratarse, sino de la combinación de su preferencia "
+       f"({pref(FOCO)}) con sus factores de riesgo: " if FOCO in PALS_UCS else "")
+    + (f"con γ ≥ {n0(gF)}" if gF else "subiendo γ")
+    + f" o con la preferencia contraria, UCS propone {opuesta['Ruta UCS']}.", REF)
 
 # 5. A*
 llenar("5.1 Definición de h(n):", [
@@ -396,131 +543,160 @@ llenar("5.2 Admisibilidad y consistencia:", [
     "**Admisible.** Para llegar al Alta desde n hay que pagar al menos una arista que sale de n, y "
     "ninguna cuesta menos que c_min(n). Como 0,2 ≤ severidad/5 ≤ 1: h(n) ≤ c_min(n) ≤ h*(n). Como γ ya "
     "está dentro de c_min(n), la cota vale para el costo unificado completo. Con una heurística "
-    "admisible, A* garantiza encontrar la ruta de menor costo (Hart et al., 1968).",
+    "admisible, A* garantiza encontrar la ruta de menor costo.",
     "**Consistente.** Para toda arista u → v, como h(v) ≥ 0 y C(u, v) ≥ c_min(u): "
     "h(u) ≤ c_min(u) ≤ C(u, v) ≤ C(u, v) + h(v). Además h(Alta) = 0. Por eso, cuando A* saca un nodo "
     "de la cola ya tiene su menor costo y puede usar la lista cerrada sin perder la ruta óptima. Lo "
-    "verificamos en los 12 pacientes calculando h*(n) con Dijkstra sobre el grafo invertido."])
+    f"verificamos en los {NP} pacientes calculando h*(n) con Dijkstra sobre el grafo invertido."])
 
+redu = [pid for pid in P["ID_Paciente"] if fila(pid, "A*")["Nodos Expandidos"] < fila(pid, "UCS")["Nodos Expandidos"]]
+misma = sum(fila(pid, "A*")["Ruta Propuesta"] == fila(pid, "UCS")["Ruta Propuesta"] for pid in P["ID_Paciente"])
 t5 = T[5]
 TIT[t5._tbl] = ("Nodos expandidos por UCS y A* en los pacientes donde A* reduce la búsqueda", None)
-llenar_tabla(t5, [[pid, fila(pid, "UCS")["Nodos Expandidos"], fila(pid, "A*")["Nodos Expandidos"],
-                   f"{fila(pid, 'UCS')['Nodos Expandidos'] - fila(pid, 'A*')['Nodos Expandidos']} (20 %)",
-                   "Sí" if fila(pid, "UCS")["Ruta Propuesta"] == fila(pid, "A*")["Ruta Propuesta"] else "No"]
-                  for pid in ["P004", "P009", "P012"]])
+filas5 = []
+for pid in redu:
+    u, a_ = fila(pid, "UCS")["Nodos Expandidos"], fila(pid, "A*")["Nodos Expandidos"]
+    filas5.append([pid, u, a_, f"{u - a_} ({dec(100 * (u - a_) / u, 0)} %)",
+                   "Sí" if fila(pid, "UCS")["Ruta Propuesta"] == fila(pid, "A*")["Ruta Propuesta"] else "No"])
+if not filas5:
+    filas5 = [["—", "—", "—", "0", "—"]]
+ajustar_filas(t5, len(filas5))
+llenar_tabla(t5, filas5)
+tu, ta = r.loc["UCS", "Nodos expandidos (total)"], r.loc["A*", "Nodos expandidos (total)"]
 nuevo_par_despues(t5,
-    "Son los tres pacientes donde A* ahorra un nodo; en los otros nueve expande 5, igual que UCS. "
-    "En total: UCS 60 y A* 57 nodos (5 % menos), con la misma ruta y el mismo costo en los 12.", REF)
+    (f"Son los {len(redu)} pacientes donde A* expande menos nodos; en los otros {NP - len(redu)} expande "
+     "lo mismo que UCS. " if redu else "En ningún paciente A* expande menos nodos que UCS. ")
+    + f"En total: UCS {tu} y A* {ta} nodos ({dec(100 * (tu - ta) / tu, 0)} % menos), con la misma ruta "
+      f"en {de(misma, NP)} pacientes.", REF)
 
-h = {k: S5[k].sum() for k in ["h = 0 (UCS)", "h severidad (equipo)", "h = c_min (factor 1)", "h* (perfecta)"]}
+hh = {k: S5[k].sum() for k in ["h = 0 (UCS)", "h severidad (equipo)", "h = c_min (factor 1)", "h* (perfecta)"]}
+ucs_t = tabla[tabla["Algoritmo"] == "UCS"]
+nodos_ruta = (ucs_t["Ruta Propuesta"].str.count("→") + 2).mean()
 ult = llenar("5.4 Interpretación:", [
-    "La reducción es pequeña por el tamaño del grafo. Una ruta curativa obliga a expandir 4 nodos "
-    "(Diagnostico, una fase postoperatoria, Consolidacion y Alta), así que UCS, que expande 5, solo "
-    "puede ahorrar uno: la otra fase postoperatoria. A* la evita cuando h hace que su f supere el "
-    "costo óptimo, y eso solo ocurre en P004 y P012 (severidad 5 con los cuatro factores, donde h es alta) y en P009 (cuya ruta óptima es el paliativo de un paso).",
-    f"**Simulación S5 (cuatro heurísticas).** Con h = 0, A* es UCS ({h['h = 0 (UCS)']} nodos). Con la "
-    f"heurística del equipo ({h['h severidad (equipo)']}) obtenemos lo mismo que con c_min sin escalar "
-    f"({h['h = c_min (factor 1)']}): en este grafo la escala por severidad no cuesta eficiencia. Con la "
-    f"heurística perfecta h*, A* llega a {h['h* (perfecta)']}, el mínimo posible; nuestra heurística "
-    f"queda lejos de ese mínimo porque solo mira un paso hacia adelante.",
+    f"La reducción es pequeña por el tamaño del grafo ({len(FASES)} fases). La ruta óptima ya contiene en "
+    f"promedio {dec(nodos_ruta, 1)} nodos y UCS expande en promedio {dec(ucs_t['Nodos Expandidos'].mean(), 1)}, "
+    "así que el margen de ahorro es de muy pocos nodos por paciente. A* solo ahorra cuando h hace que la f de "
+    "un nodo supere el costo óptimo"
+    + (f", y eso ocurre en {lista([f'{pid} (severidad {pac(pid)['Severidad_Diagnostico']})' for pid in redu])}."
+       if redu else "."),
+    f"**Simulación S5 (cuatro heurísticas).** Con h = 0, A* es UCS ({hh['h = 0 (UCS)']} nodos). Con la "
+    f"heurística del equipo expande {hh['h severidad (equipo)']} y con c_min sin escalar "
+    f"{hh['h = c_min (factor 1)']}. Con la heurística perfecta h*, A* llega a {hh['h* (perfecta)']}, el mínimo "
+    "posible; nuestra heurística queda lejos de ese mínimo porque solo mira un paso hacia adelante.",
     "En un grafo más grande, con más fases, más tratamientos por fase o varias líneas de "
     "tratamiento, UCS expande todo nodo con g(n) menor que el costo óptimo C*, y ese número crece de "
     "forma exponencial con la profundidad. A* solo expande los nodos con g(n) + h(n) < C*, así que "
-    "cada punto de información de h recorta ramas completas (Russell y Norvig, 2021). Ahí la diferencia entre 5 y 4 nodos se "
-    "volvería de cientos o miles, y valdría la pena una heurística que mire más de un paso."])
+    "cada punto de información de h recorta ramas completas, y valdría la pena una heurística que mire "
+    "más de un paso."])
 imagen_despues(ult, os.path.join(dir_res, "fig_heuristicas.png"), 6.0, 2,
-               "Nodos expandidos por A* en los 12 pacientes según la heurística",
+               f"Nodos expandidos por A* en los {NP} pacientes según la heurística",
                "En naranja, la heurística del equipo. h* es la heurística perfecta, calculada con "
                "Dijkstra (simulación S5).")
 
 # 6. Ética
 llenar("6.1 Responsabilidad:", [
     "Nuestra postura es que la responsabilidad es **compartida pero no se diluye**: cada actor "
-    "responde por lo que controla. La OMS insiste en que la IA en salud no debe desplazar la "
-    "responsabilidad humana sobre las decisiones clínicas (Organización Mundial de la Salud [OMS], 2021).",
+    "responde por lo que controla.",
     "**El médico tratante** responde por la decisión final. La herramienta propone; el médico "
     "acepta, ajusta o rechaza y obtiene el consentimiento informado. En Colombia la Ley 23 de 1981 "
-    "(Congreso de Colombia, 1981) asigna al médico el deber de cuidado sobre el paciente, y una recomendación "
+    "(ética médica) asigna al médico el deber de cuidado sobre el paciente, y una recomendación "
     "automática no lo reemplaza.",
     "**La institución** responde por haber adoptado la herramienta: validarla con sus propios datos, "
     "capacitar a quien la usa, auditar sus recomendaciones y definir cuándo no debe usarse.",
-    f"**Los desarrolladores (nosotros)** respondemos por el modelo. La simulación S4 lo muestra: P009 "
-    f"pasa de paliativo a una ruta curativa cuando γ cruza {n0(g9)}, y ese valor lo elegimos nosotros "
-    f"sin evidencia clínica. Elegir α, β y γ es tomar decisiones clínicas disfrazadas de parámetros, "
-    f"así que tenemos que documentarlas, justificarlas y advertir sus límites. Si el modelo falla "
-    f"por un error que pudimos prever (por ejemplo, un multiplicador mal emparejado), la falla es "
-    f"nuestra aunque el médico haya firmado."])
+    "**Los desarrolladores (nosotros)** respondemos por el modelo. "
+    + (f"La simulación S4 lo muestra: {FOCO} cambia de recomendación cuando γ cruza {n0(gF)}, y ese valor "
+       "lo elegimos nosotros sin evidencia clínica. " if gF else
+       "La simulación S4 muestra que las rutas cambian según el valor de γ, que elegimos sin evidencia clínica. ")
+    + "Elegir α, β y γ es tomar decisiones clínicas disfrazadas de parámetros, así que tenemos que "
+      "documentarlas, justificarlas y advertir sus límites. Si el modelo falla por un error que pudimos "
+      "prever (por ejemplo, un multiplicador mal emparejado), la falla es nuestra aunque el médico haya firmado."])
 
-PESOS_TXT = {"(1.0, 2000, 35000)": "1,0; 2.000; 35.000", "(0.1, 3000, 30000)": "0,1; 3.000; 30.000"}
-p9m, p9s = s3("P009", "Min"), s3("P009", "Max")
-p4m, p4s = s3("P004", "Min"), s3("P004", "Max")
+rf_s1 = S1[S1["ID"] == FOCO].iloc[0]
+txt_62a = (f"**1. Abandono terapéutico.** Si los {len(ids_max)} pacientes que prefieren supervivencia pasaran a "
+           f"«minimizar costo», **{de(len(pal_max), len(ids_max))}** recibirían {PALN}"
+           + (f"; solo conserva{'n' if len(cur_max) > 1 else ''} una ruta curativa "
+              + lista([f"{pid} ({sim.n_factores(pac(pid))} factores)" if sim.n_factores(pac(pid))
+                       else f"{pid} (sin factores de riesgo)" for pid in cur_max]) + "."
+              if cur_max else ".")
+           + " Cada factor encarece las rutas curativas y la opción paliativa queda como la salida barata: "
+             "la herramienta tiende a renunciar al tratamiento justamente con los pacientes más frágiles, "
+             "una discriminación por comorbilidad que nadie programó a propósito."
+           if ids_max else
+           "**1. Abandono terapéutico.** En los datos actuales ningún paciente prefiere maximizar supervivencia, "
+           "así que esta comparación no aplica.")
+txt_62b = (f"**2. Tratamiento tóxico.** Si se quita la opción paliativa, la ruta más barata para {FOCO} es "
+           f"{rf_s1['UCS sin paliativo']}, cuyo peor paso tiene riesgo {dec(rf_s1['Riesgo máx. UCS s/p'])} "
+           f"veces el basal (simulación S1b)."
+           + (" La preferencia económica empuja a una de dos salidas: no tratar o tratar con lo más tóxico."
+              if rf_s1["Riesgo máx. UCS s/p"] >= 1.5 else ""))
 llenar("6.2 Priorización económica y opciones letales:", [
     "La simulación S3 corre UCS sobre cada paciente con su preferencia real y con la contraria. "
-    "Aparecen dos formas en que el peso del dinero puede llevar a un resultado clínicamente "
-    "inaceptable:",
-    f"**1. Abandono terapéutico.** Si los 8 pacientes que prefieren supervivencia pasaran a «minimizar "
-    f"costo», **{len(pal_max)} de 8** recibirían Cuidado_Paliativo; solo P001, sin factores de riesgo, "
-    f"conserva una ruta curativa. El sistema renuncia al tratamiento justamente con los pacientes más "
-    f"frágiles: cada factor encarece las rutas curativas y el paliativo, con riesgo 1 en todas las "
-    f"columnas, queda como la salida barata. Es una discriminación por comorbilidad que nadie programó "
-    f"a propósito, y que va contra los principios de beneficencia y justicia (Beauchamp y "
-    f"Childress, 2019).",
-    "**2. Tratamiento tóxico.** Si se quita la opción paliativa, la ruta más barata para P009 es "
-    "Cirugia_Abierta → Quimio_Estandar → Radioterapia, con una quimioterapia de riesgo 8 en un "
-    "paciente renal e inmunosuprimido (simulación S1b). La preferencia económica empuja a una de dos "
-    "salidas: no tratar o tratar con lo más tóxico."])
+    "Aparecen dos formas en que el peso del dinero puede llevar a un resultado clínicamente inaceptable:",
+    txt_62a, txt_62b])
 t6 = T[6]
 TIT[t6._tbl] = ("Efecto de la preferencia del paciente sobre la ruta propuesta (simulación S3)",
                 "(real) indica la preferencia registrada en el Excel.")
-ajustar_filas(t6, 4)
-llenar_tabla(t6, [[r["ID"], r["Preferencia simulada"], PESOS_TXT[r["Pesos (α, β, γ)"]],
-                   f"{corta(r['Ruta UCS'])} (efect. {pct(r['Efectividad'])})",
-                   f"${n0(r['USD'])} (C {n0(r['Costo unificado'])})"]
-                  for r in [p9m, p9s, p4s, p4m]])
+filas6 = []
+for pid in dict.fromkeys([FOCO, COMP]):
+    for pr in ("Min", "Max"):
+        r_ = s3(pid, pr)
+        filas6.append([pid, r_["Preferencia simulada"], PESOS_TXT[r_["Pesos (α, β, γ)"]],
+                       f"{corta(r_['Ruta UCS'])} (efect. {pct(r_['Efectividad'])})",
+                       f"${n0(r_['USD'])} (C {n0(r_['Costo unificado'])})"])
+ajustar_filas(t6, len(filas6))
+llenar_tabla(t6, filas6)
+fm, fx = s3(FOCO, "Min"), s3(FOCO, "Max")
+cm, cx = s3(COMP, "Min"), s3(COMP, "Max")
 nuevo_par_despues(t6,
-    f"Para P009, cambiar solo la preferencia pasa la efectividad estimada de {pct(p9m['Efectividad'])} a "
-    f"{pct(p9s['Efectividad'])} a cambio de ${n0(p9s['USD'] - p9m['USD'])}. P004 hace el recorrido "
-    f"contrario: con su preferencia real recibe laparoscopía e inmunoterapia y, si declarara «minimizar "
-    f"costo», recibiría paliativo. El cuidado paliativo es una opción legítima cuando el paciente, "
-    f"informado, la elige; lo inaceptable es que salga de un peso económico sin que nadie se lo "
-    f"explique.", REF)
+    f"Para {FOCO}, pasar de «minimizar costo» a «maximizar supervivencia» cambia la efectividad estimada de "
+    f"{pct(fm['Efectividad'])} a {pct(fx['Efectividad'])} con una diferencia de ${n0(abs(fx['USD'] - fm['USD']))}. "
+    + (f"Para {COMP}, con «maximizar supervivencia» la ruta es {cx['Ruta UCS']} y con «minimizar costo» "
+       f"sería {cm['Ruta UCS']}. " if COMP != FOCO else "")
+    + "El cuidado paliativo es una opción legítima cuando el paciente, informado, la elige; lo inaceptable "
+      "es que salga de un peso económico sin que nadie se lo explique.", REF)
 
-ult = llenar("6.3 Recomendaciones de uso en un ambiente clínico real:", [
+cambio6 = list(S6[S6["Cambió"] == "Sí"]["ID"])
+txt_s6 = (f"Cambió la ruta de {lista([f'{pid} (a {S6[S6.ID == pid].iloc[0]['UCS con guardarraíl']})' for pid in cambio6])}; "
+          f"los otros {NP - len(cambio6)} conservaron su ruta."
+          if cambio6 else f"Con los datos actuales ninguna ruta cambió: los {NP} pacientes ya cumplen ambos límites.")
+llenar("6.3 Recomendaciones de uso en un ambiente clínico real:", [
     "**Apoyo, no decisión.** La salida se presenta como sugerencia y siempre requiere la firma del "
     "médico tratante.",
-    "**Mostrar todas las rutas, no solo la óptima.** En este grafo son cinco: el médico y el paciente "
-    "deben ver cada una con su efectividad, su riesgo y su costo en dólares, como en la tabla de P009.",
+    f"**Mostrar todas las rutas, no solo la óptima.** En este grafo son {N_RUTAS}: el médico y el paciente "
+    f"deben ver cada una con su efectividad, su riesgo y su costo en dólares, como en la tabla de {FOCO}.",
     "**Guardarraíles duros que la preferencia económica no pueda superar.** Probamos esto en la "
-    "simulación S6: descartamos toda ruta con un tratamiento de riesgo mayor a 3,0 y toda ruta con "
-    "efectividad menor al 30 % si existe una alternativa que cumpla ambos límites. Solo cambió P009, "
-    "que pasó a Cirugia_Abierta → Inmunoterapia → Radioterapia; los otros 11 conservaron su ruta. El "
-    "guardarraíl corrige el caso crítico sin alterar el resto.",
-    "**Paliativo con confirmación explícita.** Cuando la ruta propuesta es Cuidado_Paliativo y "
+    f"simulación S6: descartamos toda ruta con un tratamiento de riesgo mayor a {dec(TECHO, 1)} y toda ruta "
+    f"con efectividad menor al {int(PISO * 100)} % si existe una alternativa que cumpla ambos límites. {txt_s6}",
+    "**Paliativo con confirmación explícita.** Cuando la ruta propuesta es la opción paliativa y "
     "existe una curativa viable, el sistema debe pedirlo como decisión consciente y registrarla.",
     "**Validar y auditar los pesos.** α, β, γ y la escala de la heurística deben fijarse con "
     "especialistas y datos reales, y revisarse periódicamente comparando las recomendaciones con los "
     "desenlaces.",
     "**Proteger los datos.** Los datos del paciente están anonimizados en este proyecto; en uso real "
-    "aplica la Ley 1581 de 2012 de protección de datos personales (Congreso de Colombia, 2012)."])
+    "aplica la Ley 1581 de 2012 de protección de datos personales."])
+
+n_bfs_pal = int(bfs_t["Ruta Propuesta"].isin(PAL).sum())
+max_bfs_r = S1["Riesgo máx. BFS s/p"].max()
+llenar("[COMPLETAR]", [
+    f"**BFS no sirve como apoyo clínico.** Propone la opción paliativa a {de(n_bfs_pal, NP)} pacientes "
+    "porque cuenta pasos, y sin esa opción su elección depende del orden del Excel, con riesgos de hasta "
+    f"{dec(max_bfs_r, 1)} veces el basal.",
+    f"**UCS personaliza el tratamiento.** Con la función de costo unificada encuentra "
+    f"{r.loc['UCS', 'Rutas distintas']} rutas distintas según el perfil y evita los tratamientos de mayor "
+    "riesgo para cada factor. El término γ es indispensable: sin él UCS repite el error de BFS.",
+    f"**A* conserva la ruta óptima y reduce la búsqueda.** Su heurística es admisible y consistente, "
+    f"da la misma ruta que UCS en {de(misma, NP)} casos y ahorra {tu - ta} de {tu} nodos. El ahorro es "
+    "pequeño por el tamaño del grafo, no por la heurística.",
+    "**El riesgo ético está en los pesos.** "
+    + (f"La preferencia económica lleva a la opción paliativa a {len(pal_max)} de {len(ids_max)} pacientes "
+       "de supervivencia" if ids_max else "La preferencia económica cambia las rutas")
+    + (f", y la recomendación de {FOCO} cambia con un valor de γ que eligió el equipo" if gF else "")
+    + ". La herramienta solo es aceptable como apoyo, con todas las rutas visibles y con guardarraíles de "
+      "riesgo y efectividad."])
 
 llenar("[COMPLETAR]", [
-    "**BFS no sirve como apoyo clínico.** Propone Cuidado_Paliativo a los 12 pacientes porque cuenta "
-    "pasos, y sin esa opción su elección depende del orden del Excel, hasta llegar a riesgos de 18 "
-    "veces el basal en los pacientes complejos.",
-    "**UCS personaliza el tratamiento.** Con la función de costo unificada encuentra cuatro rutas "
-    "distintas según el perfil, evita la quimioterapia en pacientes renales y la cirugía abierta en "
-    "cardiópatas y adultos frágiles. El término γ es indispensable: sin él UCS repite el error de BFS.",
-    "**A* conserva la ruta óptima y reduce la búsqueda.** Su heurística es admisible y consistente, "
-    "da la misma ruta que UCS en los 12 casos y ahorra 3 de 60 nodos. El ahorro es pequeño por el "
-    "tamaño del grafo, no por la heurística.",
-    "**El riesgo ético está en los pesos.** La preferencia económica lleva a paliativo a 7 de 8 "
-    "pacientes de supervivencia, y la recomendación de P009 cambia con un valor de γ que eligió el "
-    "equipo. La herramienta solo es aceptable como apoyo, con todas las rutas visibles y con "
-    "guardarraíles de riesgo y efectividad."])
-
-llenar("[COMPLETAR]", [
-    "**Tamaño del grafo.** Cinco fases y cinco rutas no representan un tratamiento oncológico real "
-    "(varias líneas de quimioterapia, recaídas, efectos acumulados), y limitan lo que podemos medir "
+    f"**Tamaño del grafo.** {len(FASES)} fases y {N_RUTAS} rutas no representan un tratamiento oncológico "
+    "real (varias líneas de quimioterapia, recaídas, efectos acumulados), y limitan lo que podemos medir "
     "sobre la heurística.",
     "**Pesos sin justificación clínica.** α, β y γ los elegimos para que el modelo se comporte de forma "
     "razonable, no a partir de datos; la simulación S4 muestra cuánto dependen de ellos las rutas.",
@@ -530,42 +706,38 @@ llenar("[COMPLETAR]", [
     "**Efectividad y estado Alta.** La efectividad de la ruta es el producto de efectividades "
     "independientes y el Alta no distingue curación de paliación. La severidad solo entra en la "
     "heurística, no en el costo.",
-    "**Datos.** Son 12 pacientes sintéticos y una matriz de 8 tratamientos; no hay validación con "
+    f"**Datos.** Son {NP} pacientes sintéticos y una matriz de {NT} tratamientos; no hay validación con "
     "desenlaces reales."])
 
-llenar("[COMPLETAR]", [
-    "Beauchamp, T. L. y Childress, J. F. (2019). __Principles of biomedical ethics__ (8.ª ed.). Oxford "
-    "University Press.",
-    "Congreso de Colombia. (1981). __Ley 23 de 1981, por la cual se dictan normas en materia de ética "
-    "médica__.",
-    "Congreso de Colombia. (2012). __Ley Estatutaria 1581 de 2012, por la cual se dictan disposiciones "
-    "generales para la protección de datos personales__.",
-    "Hagberg, A. A., Schult, D. A. y Swart, P. J. (2008). Exploring network structure, dynamics, and "
-    "function using NetworkX. En G. Varoquaux, T. Vaught y J. Millman (Eds.), __Proceedings of the 7th "
-    "Python in Science Conference__ (pp. 11–15).",
-    "Hart, P. E., Nilsson, N. J. y Raphael, B. (1968). A formal basis for the heuristic determination of "
-    "minimum cost paths. __IEEE Transactions on Systems Science and Cybernetics, 4__(2), 100–107. "
-    "https://doi.org/10.1109/TSSC.1968.300136",
-    "Organización Mundial de la Salud. (2021). __Ethics and governance of artificial intelligence for "
-    "health: WHO guidance__. https://www.who.int/publications/i/item/9789240029200",
-    "Russell, S. y Norvig, P. (2021). __Artificial intelligence: A modern approach__ (4.ª ed.). Pearson."])
+# sin sección de referencias
+h = buscar("9. Referencias")
+sig = h._p.getnext()
+borrar(h)
+if sig is not None and Paragraph(sig, h._parent).text.strip() == "[COMPLETAR]":
+    sig.getparent().remove(sig)
 
 # Anexo
 t7 = T[7]
 TIT[t7._tbl] = ("Simulaciones del pipeline usadas en el análisis", None)
 ajustar_filas(t7, 7)
 llenar_tabla(t7, [
-    ["S1", "BFS sobre los 12 pacientes (y S1b: BFS y UCS sin la arista paliativa)", "Nivel 1 (BFS)", "Todos"],
-    ["S2", "UCS en un paciente sin factores frente a uno con varios factores", "Nivel 2 (UCS)", "P001 y P004"],
-    ["S3", "Mismo paciente cambiando solo la preferencia", "Nivel 2 (UCS) y Análisis ético", "Todos (P009 y P004 en tabla)"],
-    ["S4", "Barrido de γ de 0 a 60.000 con α y β fijos; umbral de γ para P009", "Nivel 2 (UCS) y Análisis ético", "Todos"],
+    ["S1", "BFS sobre todos los pacientes (y S1b: BFS y UCS sin la opción paliativa)", "Nivel 1 (BFS)", "Todos"],
+    ["S2", "UCS en el paciente con menos factores frente al de más factores", "Nivel 2 (UCS)", lista(CASOS)],
+    ["S3", "Mismo paciente cambiando solo la preferencia", "Nivel 2 (UCS) y Análisis ético",
+     f"Todos ({lista(list(dict.fromkeys([FOCO, COMP])))} en tabla)"],
+    ["S4", f"Barrido de γ de 0 a {n0(S4['gamma'].max())} con α y β fijos; umbral de γ para {FOCO}",
+     "Nivel 2 (UCS) y Análisis ético", "Todos"],
     ["S5", "A* con h = 0, h de severidad, h = c_min y h* perfecta", "Nivel 3 (A*)", "Todos"],
-    ["S6", "UCS con guardarraíl: riesgo ≤ 3,0 por tratamiento y efectividad ≥ 30 %", "Análisis ético", "Todos"],
-    ["—", "Las cinco rutas de un paciente con costo, efectividad y riesgo", "Nivel 2 (UCS)", "P009 (y P004, P005 en Excel)"],
+    ["S6", f"UCS con guardarraíl: riesgo ≤ {dec(TECHO, 1)} por tratamiento y efectividad ≥ {int(PISO * 100)} %",
+     "Análisis ético", "Todos"],
+    ["—", "Todas las rutas de un paciente con costo, efectividad y riesgo", "Nivel 2 (UCS)", FOCO],
 ])
 nuevo_par_despues(t7,
     "Todas las simulaciones se reproducen con «python simulaciones.py»; los resultados quedan en "
-    "resultados/simulaciones.xlsx (una hoja por simulación) y las figuras en resultados/.", REF)
+    "resultados/simulaciones.xlsx (una hoja por simulación) y las figuras en resultados/. Los pacientes "
+    "de ejemplo se eligen automáticamente: el de menos factores de riesgo, el de más factores y el primero "
+    "al que UCS le propone la opción paliativa.", REF)
+
 
 # ---------- limpieza: guías e instrucciones ----------
 for p in list(doc.paragraphs):
