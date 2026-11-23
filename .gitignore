@@ -21,3 +21,7 @@ reporte_comparativo.csv
 
 # Carpeta antigua (todo está ahora en src/, datos/ y archivo/)
 proyecto_final_iabs/
+
+# Informe generado por armar_informe.py (se crea de nuevo cada vez que se corre)
+docs/SSDC_Entregables_2_y_3.docx
+docs/SSDC_Entregables_2_y_3.pdf
